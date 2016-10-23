@@ -124,7 +124,6 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
 
 	if (stat & XDATA) {
-		dev_warn(mcasp->dev, "Sent data");
 		mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0xFFFFFFFF);
 		handled_mask |= XDATA;
 	}
@@ -184,7 +183,6 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
 
 	if (stat & RDATA) {
-		dev_warn(mcasp->dev, "Receive data");
 		val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
 		handled_mask |= RDATA;
 	}
