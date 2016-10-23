@@ -32,7 +32,7 @@
 
 static const struct of_device_id mcasp_dt_ids[] = {
 	{
-		.compatible = "ti,am33xx-mcasp-audio",
+		.compatible = "ti,am33xx-mcasp-serial",
 	},
 	{},
 };
