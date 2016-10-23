@@ -123,30 +123,32 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
 
+	if (stat & XDATA) {
+		dev_warn(mcasp->dev, "Sent data");
+		mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0xFFFFFFFF);
+		handled_mask |= XDATA;
+	}
+
 	if (stat & XUNDRN) {
 		dev_warn(mcasp->dev, "Transmit buffer underflow");
 		handled_mask |= XUNDRN;
 	}
 
-	if (stat & XSYNCERR) {
-		dev_warn(mcasp->dev, "Transmit frame sync error");
-		handled_mask |= XSYNCERR;
-	}
+	// if (stat & XSYNCERR) {
+	// 	dev_warn(mcasp->dev, "Transmit frame sync error");
+	// 	handled_mask |= XSYNCERR;
+	// }
 
-	if (stat & XCKFAIL) {
-		dev_warn(mcasp->dev, "Transmit clock failure");
-		handled_mask |= XCKFAIL;
-	}
+	// if (stat & XCKFAIL) {
+	// 	dev_warn(mcasp->dev, "Transmit clock failure");
+	// 	handled_mask |= XCKFAIL;
+	// }
 
 	// if (stat & XDMAERR) {
 	// 	dev_warn(mcasp->dev, "Transmit DMA failure");
 	// 	handled_mask |= XDMAERR;
 	// }
 
-	if (stat & XDATA) {
-		mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0xFFFFFFFF);
-		handled_mask |= XDATA;
-	}
 
 	// if (stat & XLAST) {
 	// 	dev_warn(mcasp->dev, "Transmit last slot");
@@ -181,30 +183,32 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
 
+	if (stat & RDATA) {
+		dev_warn(mcasp->dev, "Receive data");
+		val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
+		handled_mask |= RDATA;
+	}
+
 	if (stat & ROVRN) {
 		dev_warn(mcasp->dev, "Receive buffer overflow");
 		handled_mask |= ROVRN;
 	}
 
-	if (stat & RSYNCERR) {
-		dev_warn(mcasp->dev, "Receive frame sync error");
-		handled_mask |= RSYNCERR;
-	}
+	// if (stat & RSYNCERR) {
+	// 	dev_warn(mcasp->dev, "Receive frame sync error");
+	// 	handled_mask |= RSYNCERR;
+	// }
 
-	if (stat & RCKFAIL) {
-		dev_warn(mcasp->dev, "Receive clock failure");
-		handled_mask |= RCKFAIL;
-	}
+	// if (stat & RCKFAIL) {
+	// 	dev_warn(mcasp->dev, "Receive clock failure");
+	// 	handled_mask |= RCKFAIL;
+	// }
 
 	// if (stat & RDMAERR) {
 	// 	dev_warn(mcasp->dev, "Receive DMA error");
 	// 	handled_mask |= RDMAERR;
 	// }
 
-	if (stat & RDATA) {
-		val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
-		handled_mask |= RDATA;
-	}
 
 	// if (stat & RLAST) {
 	// 	dev_warn(mcasp->dev, "Receive last slot");
