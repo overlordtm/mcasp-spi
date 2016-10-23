@@ -18,7 +18,7 @@ clean:
 	$(MAKE) -C $(KERNEL) M=$(PWD) clean
 
 transfer:
-	scp Makefile mcasp.h mcaspdrv.c am335x-boneblack-mcasp0.dts debian@192.168.88.2:~/mcasp
+	scp Makefile mcasp.h mcaspdrv.c am335x-boneblack-mcasp0.dts debian@192.168.7.2:~/mcasp
 
 try: rmmod insmod lsmod
 

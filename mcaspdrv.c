@@ -122,6 +122,8 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
 
+	dev_info(mcasp->dev, "TX IRQ XSTAT=0x%X", stat);
+
 	if (stat & XUNDRN) {
 		dev_warn(mcasp->dev, "Transmit buffer underflow");
 		handled_mask |= XUNDRN;
@@ -134,6 +136,8 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 
 	/* Ack the handled event only */
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_XSTAT_REG, handled_mask);
+	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
+	dev_info(mcasp->dev, "TX IRQ AFTER XSTAT=0x%X", stat);
 
 	return IRQ_RETVAL(handled_mask);
 }
@@ -150,6 +154,7 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 	dev_info(mcasp->dev, "Received 0x%X", val);
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
+	dev_info(mcasp->dev, "RX IRQ RSTAT=0x%X", stat);
 
 	if (stat & ROVRN) {
 		dev_warn(mcasp->dev, "Receive buffer overflow");
@@ -163,6 +168,8 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 
 	/* Ack the handled event only */
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_RSTAT_REG, handled_mask);
+	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
+	dev_info(mcasp->dev, "RX IRQ AFTER RSTAT=0x%X", stat);
 
 	return IRQ_RETVAL(handled_mask);
 }
@@ -176,10 +183,10 @@ static void mcasp_rx_init(struct davinci_mcasp *mcasp) {
 	dev_info(mcasp->dev, "Setting RMASK to 0x%X", val);
 
 	// format bits
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_RFMT_REG, FSRDLY(0x1), FSRDLY(0x3));
-	mcasp_set_bits(mcasp, DAVINCI_MCASP_RFMT_REG, RXORD);
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_RFMT_REG, RXSSZ(0x7), RXSSZ(0xF));
-	mcasp_set_bits(mcasp, DAVINCI_MCASP_RFMT_REG, RXSEL);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_RFMT_REG, RDATDLY(0x1), RDATDLY(0x3));
+	mcasp_set_bits(mcasp, DAVINCI_MCASP_RFMT_REG, RRVRS);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_RFMT_REG, RSSZ(0x7), RSSZ(0xF));
+	mcasp_set_bits(mcasp, DAVINCI_MCASP_RFMT_REG, RBUSEL);
 
 	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RFMT_REG);
 	dev_info(mcasp->dev, "Setting RFMT to 0x%X", val);
@@ -204,7 +211,7 @@ static void mcasp_rx_init(struct davinci_mcasp *mcasp) {
 	// high clock
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, HCLKRM);
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, HCLKRP);
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, HCLKRDIV(2), HCLKRDIV_MASK);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, HCLKRDIV(5), HCLKRDIV_MASK);
 
 	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG);
 	dev_info(mcasp->dev, "Setting AHCLKRCTL to 0x%X", val);
@@ -214,8 +221,8 @@ static void mcasp_rx_init(struct davinci_mcasp *mcasp) {
 
 	// setup serializer on pin ???
 	// TODO
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_SRCTL_REG(1), SRMOD_TX, SRMOD_MASK);
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_SRCTL_REG(1), DISMOD_HIGH, DISMOD_MASK);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_SRCTL_REG(3), SRMOD_TX, SRMOD_MASK);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_SRCTL_REG(3), DISMOD_HIGH, DISMOD_MASK);
 
 	return;
 }
@@ -229,10 +236,10 @@ static void mcasp_tx_init(struct davinci_mcasp *mcasp) {
 	dev_info(mcasp->dev, "Setting XMASK to 0x%X", val);
 
 	// format
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_XFMT_REG, FSRDLY(0x1), FSRDLY(0x3));
-	mcasp_set_bits(mcasp, DAVINCI_MCASP_XFMT_REG, RXORD);
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_XFMT_REG, RXSSZ(0x7), RXSSZ(0xF));
-	mcasp_set_bits(mcasp, DAVINCI_MCASP_XFMT_REG, RXSEL);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_XFMT_REG, XDATDLY(0x1), XDATDLY(0x3));
+	mcasp_set_bits(mcasp, DAVINCI_MCASP_XFMT_REG, XRVRS);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_XFMT_REG, XSSZ(0x7), XSSZ(0xF));
+	mcasp_set_bits(mcasp, DAVINCI_MCASP_XFMT_REG, XBUSEL);
 
 	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_XFMT_REG);
 	dev_info(mcasp->dev, "Setting XFMT to 0x%X", val);
@@ -258,7 +265,7 @@ static void mcasp_tx_init(struct davinci_mcasp *mcasp) {
 	// high clock
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG, HCLKXM);
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG, HCLKXP);
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG, HCLKXDIV(2), HCLKXDIV_MASK);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG, HCLKXDIV(5), HCLKXDIV_MASK);
 
 	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG);
 	dev_info(mcasp->dev, "Setting AHCLKXCTL to 0x%X", val);
@@ -367,6 +374,25 @@ static int mcasp_hw_init(struct davinci_mcasp *mcasp) {
 	dev_info(mcasp->dev, "Enabling RDATA and XDATA interrupts");
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_RINTCTL_REG, RDATA);
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_XINTCTL_REG, XDATA);
+
+	mcasp_set_reg(mcasp, DAVINCI_MCASP_RSTAT_REG, 0xFFFF);
+	mcasp_set_reg(mcasp, DAVINCI_MCASP_XSTAT_REG, 0xFFFF);
+
+	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
+	dev_info(mcasp->dev, "RSTAT=0x%X", val);
+
+	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
+	dev_info(mcasp->dev, "XSTAT=0x%X", val);
+
+	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RCLKCHK_REG);
+	dev_info(mcasp->dev, "RCLKCHK=0x%X", val);
+
+	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_XCLKCHK_REG);
+	dev_info(mcasp->dev, "XCLKCHK=0x%X", val);
+
+
+	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG);
+	dev_info(mcasp->dev, "GBLCTL=0x%X", val);
 
 	pm_runtime_put(mcasp->dev);
 

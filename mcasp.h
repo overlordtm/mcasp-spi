@@ -141,24 +141,24 @@
 /*
  * DAVINCI_MCASP_XFMT_REG - Transmit Bitstream Format Register Bits
  */
-#define TXROT(val)	(val)
-#define TXSEL		BIT(3)
-#define TXSSZ(val)	(val<<4)
-#define TXPBIT(val)	(val<<8)
-#define TXPAD(val)	(val<<13)
-#define TXORD		BIT(15)
-#define FSXDLY(val)	(val<<16)
+#define XROT(val)	(val)
+#define XBUSEL		BIT(3)
+#define XSSZ(val)	(val<<4)
+#define XPBIT(val)	(val<<8)
+#define XPAD(val)	(val<<13)
+#define XRVRS		BIT(15)
+#define XDATDLY(val)	(val<<16)
 
 /*
  * DAVINCI_MCASP_RFMT_REG - Receive Bitstream Format Register Bits
  */
-#define RXROT(val)	(val)
-#define RXSEL		BIT(3)
-#define RXSSZ(val)	(val<<4)
-#define RXPBIT(val)	(val<<8)
-#define RXPAD(val)	(val<<13)
-#define RXORD		BIT(15)
-#define FSRDLY(val)	(val<<16)
+#define RROT(val)	(val)
+#define RBUSEL		BIT(3)
+#define RSSZ(val)	(val<<4)
+#define RPBIT(val)	(val<<8)
+#define RPAD(val)	(val<<13)
+#define RRVRS		BIT(15)
+#define RDATDLY(val)	(val<<16)
 
 /*
  * DAVINCI_MCASP_AFSXCTL_REG -  Transmit Frame Control Register Bits
