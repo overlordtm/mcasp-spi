@@ -21,6 +21,9 @@
 #define MCASP_MAX_AFIFO_DEPTH	64
 #define MCASP_DEBUG				1
 
+#define REG_DUMP(MCASP, REG) \
+	dev_info(MCASP->dev, #REG " is 0x%08X", mcasp_get_reg(MCASP, REG));
+
 static struct davinci_mcasp_pdata am33xx_mcasp_pdata = {
 	.tx_dma_offset = 0,
 	.rx_dma_offset = 0,
@@ -118,26 +121,58 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 	u32 handled_mask = 0;
 	u32 stat;
 
-	mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(0), 0xA5);
+	pm_runtime_get_sync(mcasp->dev);
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
 
-	dev_info(mcasp->dev, "TX IRQ XSTAT=0x%X", stat);
+	// dev_info(mcasp->dev, "TX IRQ XSTAT=0x%X", stat);
 
 	if (stat & XUNDRN) {
 		dev_warn(mcasp->dev, "Transmit buffer underflow");
 		handled_mask |= XUNDRN;
 	}
 
-	if (stat & XRDATA) {
-		dev_warn(mcasp->dev, "XDATA bit not cleared in XSTAT");
-		handled_mask |= XRDATA;
+	if (stat & XSYNCERR) {
+		dev_warn(mcasp->dev, "Transmit frame sync error");
+		handled_mask |= XSYNCERR;
+	}
+
+	if (stat & XCKFAIL) {
+		dev_warn(mcasp->dev, "Transmit clock failure");
+		handled_mask |= XCKFAIL;
+	}
+
+	// if (stat & XDMAERR) {
+	// 	dev_warn(mcasp->dev, "Transmit DMA failure");
+	// 	handled_mask |= XDMAERR;
+	// }
+
+	if (stat & XDATA) {
+		dev_warn(mcasp->dev, "Sending some data");
+		mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(0), 0xA5);
+		handled_mask |= XDATA;
+	}
+
+	// if (stat & XLAST) {
+	// 	dev_warn(mcasp->dev, "Transmit last slot");
+	// 	handled_mask |= XLAST;
+	// }
+
+	// if (stat & XSTAFRM) {
+	// 	dev_warn(mcasp->dev, "Transmit start of frame");
+	// 	handled_mask |= XSTAFRM;
+	// }
+
+	if (stat & XRERR) {
+		handled_mask |= XRERR;
 	}
 
 	/* Ack the handled event only */
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_XSTAT_REG, handled_mask);
-	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
-	dev_info(mcasp->dev, "TX IRQ AFTER XSTAT=0x%X", stat);
+	// stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
+	// dev_info(mcasp->dev, "TX IRQ AFTER XSTAT=0x%X", stat);
+
+	pm_runtime_put(mcasp->dev);
 
 	return IRQ_RETVAL(handled_mask);
 }
@@ -149,171 +184,208 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 	u32 stat;
 	u32 val;
 
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RBUF_REG(0));
-
-	dev_info(mcasp->dev, "Received 0x%X", val);
+	pm_runtime_get_sync(mcasp->dev);
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
-	dev_info(mcasp->dev, "RX IRQ RSTAT=0x%X", stat);
+	// dev_info(mcasp->dev, "RX IRQ RSTAT=0x%X", stat);
 
 	if (stat & ROVRN) {
 		dev_warn(mcasp->dev, "Receive buffer overflow");
 		handled_mask |= ROVRN;
 	}
 
-	if (stat & XRDATA) {
-		dev_warn(mcasp->dev, "RDATA bit not cleared in RSTAT");
-		handled_mask |= XRDATA;
+	if (stat & RSYNCERR) {
+		dev_warn(mcasp->dev, "Receive frame sync error");
+		handled_mask |= RSYNCERR;
+	}
+
+	if (stat & RCKFAIL) {
+		dev_warn(mcasp->dev, "Receive clock failure");
+		handled_mask |= RCKFAIL;
+	}
+
+	// if (stat & RDMAERR) {
+	// 	dev_warn(mcasp->dev, "Receive DMA error");
+	// 	handled_mask |= RDMAERR;
+	// }
+
+	if (stat & RDATA) {
+		dev_warn(mcasp->dev, "Received some data");
+		val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RBUF_REG(1));
+		dev_info(mcasp->dev, "Received 0x%X", val);
+		handled_mask |= RDATA;
+	}
+
+	// if (stat & RLAST) {
+	// 	dev_warn(mcasp->dev, "Receive last slot");
+	// 	handled_mask |= RLAST;
+	// }
+
+	// if (stat & RSTAFRM) {
+	// 	dev_warn(mcasp->dev, "Received start of frame");
+	// 	handled_mask |= RSTAFRM;
+	// }
+
+	if (stat & XRERR) {
+		handled_mask |= XRERR;
 	}
 
 	/* Ack the handled event only */
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_RSTAT_REG, handled_mask);
-	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
-	dev_info(mcasp->dev, "RX IRQ AFTER RSTAT=0x%X", stat);
+	// stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
+	// dev_info(mcasp->dev, "RX IRQ AFTER RSTAT=0x%X", stat);
+
+	pm_runtime_put(mcasp->dev);
 
 	return IRQ_RETVAL(handled_mask);
 }
 
 static void mcasp_rx_init(struct davinci_mcasp *mcasp) {
-	u32 val = 0;
 
 	// mask bits
-	val = (1UL << 16) - 1;
-	mcasp_set_reg(mcasp, DAVINCI_MCASP_RMASK_REG, val);
-	dev_info(mcasp->dev, "Setting RMASK to 0x%X", val);
+	mcasp_set_reg(mcasp, DAVINCI_MCASP_RMASK_REG, 0xFF);
+	REG_DUMP(mcasp, DAVINCI_MCASP_RMASK_REG);
 
 	// format bits
 	mcasp_mod_bits(mcasp, DAVINCI_MCASP_RFMT_REG, RDATDLY(0x1), RDATDLY(0x3));
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_RFMT_REG, RRVRS);
 	mcasp_mod_bits(mcasp, DAVINCI_MCASP_RFMT_REG, RSSZ(0x7), RSSZ(0xF));
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_RFMT_REG, RBUSEL);
-
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RFMT_REG);
-	dev_info(mcasp->dev, "Setting RFMT to 0x%X", val);
+	REG_DUMP(mcasp, DAVINCI_MCASP_RFMT_REG);
 
 	// frame sync
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_AFSRCTL_REG, FSRP);
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_AFSRCTL_REG, FSRM);
 	mcasp_clr_bits(mcasp, DAVINCI_MCASP_AFSRCTL_REG, FRWID);
 	mcasp_mod_bits(mcasp, DAVINCI_MCASP_AFSRCTL_REG, RMOD(0x8), RMOD(0x1FF));
-
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_AFSRCTL_REG);
-	dev_info(mcasp->dev, "Setting AFSRCTL to 0x%X", val);
+	REG_DUMP(mcasp, DAVINCI_MCASP_AFSRCTL_REG);
 
 	// clock
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG, CLKRP);
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG, CLKRM);
 	mcasp_mod_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG, CLKRDIV(23), CLKRDIV_MASK);
-
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_ACLKRCTL_REG);
-	dev_info(mcasp->dev, "Setting ACLKRCTL to 0x%X", val);
+	REG_DUMP(mcasp, DAVINCI_MCASP_ACLKRCTL_REG);
 
 	// high clock
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, HCLKRM);
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, HCLKRP);
 	mcasp_mod_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, HCLKRDIV(5), HCLKRDIV_MASK);
-
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG);
-	dev_info(mcasp->dev, "Setting AHCLKRCTL to 0x%X", val);
+	REG_DUMP(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG);
 
 	// ROVRN interrupt eanble
-	mcasp_set_bits(mcasp, DAVINCI_MCASP_RINTCTL_REG, ROVRN);
+	// mcasp_set_bits(mcasp, DAVINCI_MCASP_RINTCTL_REG, ROVRN);
+	// REG_DUMP(mcasp, DAVINCI_MCASP_RINTCTL_REG);
+
+	// clock chekc
+	mcasp_set_reg(mcasp, DAVINCI_MCASP_RCLKCHK_REG, 0x00FF0003);
+	REG_DUMP(mcasp, DAVINCI_MCASP_RCLKCHK_REG);
+
+	// set TDM
+	mcasp_set_reg(mcasp, DAVINCI_MCASP_RTDM_REG, 0x01);
+	REG_DUMP(mcasp, DAVINCI_MCASP_RTDM_REG);
 
 	// setup serializer on pin ???
 	// TODO
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_SRCTL_REG(3), SRMOD_TX, SRMOD_MASK);
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_SRCTL_REG(3), DISMOD_HIGH, DISMOD_MASK);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_SRCTL_REG(1), SRMOD_RX, SRMOD_MASK);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_SRCTL_REG(1), DISMOD_LOW, DISMOD_MASK);
+	REG_DUMP(mcasp, DAVINCI_MCASP_SRCTL_REG(1));
 
 	return;
 }
 
 static void mcasp_tx_init(struct davinci_mcasp *mcasp) {
-	u32 val = 0;
 
 	// mask
-	val = (1UL << 16) - 1;
-	mcasp_set_reg(mcasp, DAVINCI_MCASP_XMASK_REG, val);
-	dev_info(mcasp->dev, "Setting XMASK to 0x%X", val);
+	mcasp_set_reg(mcasp, DAVINCI_MCASP_XMASK_REG, 0xFF);
+	REG_DUMP(mcasp, DAVINCI_MCASP_XMASK_REG);
 
 	// format
 	mcasp_mod_bits(mcasp, DAVINCI_MCASP_XFMT_REG, XDATDLY(0x1), XDATDLY(0x3));
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_XFMT_REG, XRVRS);
 	mcasp_mod_bits(mcasp, DAVINCI_MCASP_XFMT_REG, XSSZ(0x7), XSSZ(0xF));
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_XFMT_REG, XBUSEL);
-
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_XFMT_REG);
-	dev_info(mcasp->dev, "Setting XFMT to 0x%X", val);
+	REG_DUMP(mcasp, DAVINCI_MCASP_XFMT_REG);
 
 	// frame sync
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_AFSXCTL_REG, FSXP);
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_AFSXCTL_REG, FSXM);
 	mcasp_clr_bits(mcasp, DAVINCI_MCASP_AFSXCTL_REG, FXWID);
 	mcasp_mod_bits(mcasp, DAVINCI_MCASP_AFSXCTL_REG, XMOD(0x8), XMOD(0x1FF));
-
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_AFSXCTL_REG);
-	dev_info(mcasp->dev, "Setting AFSXCTL to 0x%X", val);
+	REG_DUMP(mcasp, DAVINCI_MCASP_AFSXCTL_REG);
 
 	// clock
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_ACLKXCTL_REG, CLKXP); // falling edge polarity
 	mcasp_clr_bits(mcasp, DAVINCI_MCASP_ACLKXCTL_REG, ASYNC); // sync freqs
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_ACLKXCTL_REG, CLKXM); // internal clock source
 	mcasp_mod_bits(mcasp, DAVINCI_MCASP_ACLKXCTL_REG, CLKXDIV(23), CLKXDIV_MASK);
-
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_ACLKXCTL_REG);
-	dev_info(mcasp->dev, "Setting ACLKXCTL to 0x%X", val);
+	REG_DUMP(mcasp, DAVINCI_MCASP_ACLKXCTL_REG);
 
 	// high clock
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG, HCLKXM);
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG, HCLKXP);
 	mcasp_mod_bits(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG, HCLKXDIV(5), HCLKXDIV_MASK);
-
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG);
-	dev_info(mcasp->dev, "Setting AHCLKXCTL to 0x%X", val);
+	REG_DUMP(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG);
 
 	// XUNDRN interrupt eanble
-	mcasp_set_bits(mcasp, DAVINCI_MCASP_XINTCTL_REG, XUNDRN);
+	// mcasp_set_bits(mcasp, DAVINCI_MCASP_XINTCTL_REG, XUNDRN);
+	// REG_DUMP(mcasp,DAVINCI_MCASP_XINTCTL_REG);
+
+	// set TDM
+	mcasp_set_reg(mcasp, DAVINCI_MCASP_XTDM_REG, 0x01);
+	REG_DUMP(mcasp, DAVINCI_MCASP_XTDM_REG);
+
+	// set clock check
+	mcasp_set_reg(mcasp, DAVINCI_MCASP_XCLKCHK_REG, 0x00FF0003);
+	REG_DUMP(mcasp, DAVINCI_MCASP_XCLKCHK_REG);
 
 	// setup serializer on pin ???
 	// TODO
 	mcasp_mod_bits(mcasp, DAVINCI_MCASP_SRCTL_REG(0), SRMOD_TX, SRMOD_MASK);
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_SRCTL_REG(0), DISMOD_HIGH, DISMOD_MASK);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_SRCTL_REG(0), DISMOD_LOW, DISMOD_MASK);
+	REG_DUMP(mcasp, DAVINCI_MCASP_SRCTL_REG(0));
 
 	return;
 }
 
 static int mcasp_hw_init(struct davinci_mcasp *mcasp) {
-	u32 val = 0;
 	u32 cnt;
 
 	pm_runtime_get_sync(mcasp->dev);
 	mcasp->revision = mcasp_get_reg(mcasp, DAVINCI_MCASP_REV_REG);
+	REG_DUMP(mcasp, DAVINCI_MCASP_REV_REG);
 
-	dev_info(mcasp->dev, "Starting intialization. Device revision is 0x%X", mcasp->revision);
+	dev_info(mcasp->dev, "Starting intialization.");
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, 0x0);
 
 	cnt = 0;
 	while(mcasp_get_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG) != 0 && cnt < 100000)
 		cnt++;
 
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG);
-	dev_info(mcasp->dev, "GBLCTL set to 0x%X", val);
+	REG_DUMP(mcasp, DAVINCI_MCASP_GBLCTL_REG);
 
-	// poser configuration
+	// power configuration
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_PWRIDLESYSCONFIGT_REG, MCASP_SMARTIDLE);
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_PWRIDLESYSCONFIGT_REG);
-	dev_info(mcasp->dev, "Setting PWREMUMGT to 0x%X", val);
+	REG_DUMP(mcasp, DAVINCI_MCASP_PWRIDLESYSCONFIGT_REG);
 
 	mcasp_rx_init(mcasp);
 	mcasp_tx_init(mcasp);
 
 	// set all pins as McASP
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_PFUNC_REG, 0x00000000);
+	REG_DUMP(mcasp, DAVINCI_MCASP_PFUNC_REG);
 
 	// setup pin directions
 	// set -> output
 	// clr -> input
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AXR(0));
+	mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, ACLKR);
+	mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AHCLKR);
+	mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, ACLKX);
+	mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AHCLKX);
+	mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AFSR);
+	mcasp_set_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AFSX);
 	mcasp_clr_bits(mcasp, DAVINCI_MCASP_PDIR_REG, AXR(1));
+	REG_DUMP(mcasp, DAVINCI_MCASP_PDIR_REG);
 
 #ifdef MCASP_DEBUG
 	dev_info(mcasp->dev, "Device loopback enabled");
@@ -321,78 +393,60 @@ static int mcasp_hw_init(struct davinci_mcasp *mcasp) {
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_DLBCTL_REG, DLBEN);
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_DLBCTL_REG, DLBORD);
 	mcasp_mod_bits(mcasp, DAVINCI_MCASP_DLBCTL_REG, DLBMODE(1), DLBMODE_MASK);
+	REG_DUMP(mcasp, DAVINCI_MCASP_DLBCTL_REG);
 #endif
 
 	// start the clocks
 	dev_info(mcasp->dev, "Starting high clocks by setting RHCLKRST and XHCLKRST bits in GBLCTL");
 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, RHCLKRST);
 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, XHCLKRST);
+	REG_DUMP(mcasp, DAVINCI_MCASP_GBLCTL_REG);
 
 	// start clocks #2
 	dev_info(mcasp->dev, "Starting clocks by setting RHCLKRST and XHCLKRST bits in GBLCTL");
 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, RCLKRST);
 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, XCLKRST);
-
-	// clear receive status register
-	dev_info(mcasp->dev, "Clearing RSTAT register");
-	mcasp_set_reg(mcasp, DAVINCI_MCASP_RSTAT_REG, 0xFFFF);
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
-	dev_info(mcasp->dev, "RSTAT=0x%X", val);
-	cnt = 0;
-	while((mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG) & XRDATA) && cnt < 100000)
-		cnt++;
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
-	dev_info(mcasp->dev, "RSTAT=0x%X", val);
-
-	// clear transmit status register
-	dev_info(mcasp->dev, "Clearing XSTAT register");
-	mcasp_set_reg(mcasp, DAVINCI_MCASP_XSTAT_REG, 0xFFFF);
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
-	dev_info(mcasp->dev, "XSTAT=0x%X", val);
-	cnt = 0;
-	while((mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG) & XRDATA) && cnt < 100000)
-		cnt++;
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
-	dev_info(mcasp->dev, "XSTAT=0x%X", val);
-
-	// take serializers out of reset
-	dev_info(mcasp->dev, "Taking serializers out of reset");
-	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, RSRCLR);
-	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, XSRCLR);
-
-	// reset state machines
-	dev_info(mcasp->dev, "Reseting state machines for RX and TX");
-	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, RSMRST);
-	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, XSMRST);
-
-	// release frame sync
-	dev_info(mcasp->dev, "release frame sync generators");
-	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, RFSRST);
-	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, XFSRST);
+	REG_DUMP(mcasp, DAVINCI_MCASP_GBLCTL_REG);
 
 	// enable send and receive interupts
 	dev_info(mcasp->dev, "Enabling RDATA and XDATA interrupts");
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_RINTCTL_REG, RDATA);
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_XINTCTL_REG, XDATA);
+	REG_DUMP(mcasp, DAVINCI_MCASP_RINTCTL_REG);
+	REG_DUMP(mcasp, DAVINCI_MCASP_XINTCTL_REG);
 
+	// clear receive status register
+	dev_info(mcasp->dev, "Clearing RSTAT register");
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_RSTAT_REG, 0xFFFF);
+	REG_DUMP(mcasp, DAVINCI_MCASP_RSTAT_REG);
+
+	// clear transmit status register
+	dev_info(mcasp->dev, "Clearing XSTAT register");
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_XSTAT_REG, 0xFFFF);
+	REG_DUMP(mcasp, DAVINCI_MCASP_XSTAT_REG);
 
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
-	dev_info(mcasp->dev, "RSTAT=0x%X", val);
+	// take serializers out of reset
+	dev_info(mcasp->dev, "Taking serializers out of reset");
+	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, RSRCLR);
+	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, XSRCLR);
+	REG_DUMP(mcasp, DAVINCI_MCASP_GBLCTL_REG);
 
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
-	dev_info(mcasp->dev, "XSTAT=0x%X", val);
+	// reset state machines
+	dev_info(mcasp->dev, "Reseting state machines for RX and TX");
+	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, RSMRST);
+	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, XSMRST);
+	REG_DUMP(mcasp, DAVINCI_MCASP_GBLCTL_REG);
 
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RCLKCHK_REG);
-	dev_info(mcasp->dev, "RCLKCHK=0x%X", val);
+	// release frame sync
+	dev_info(mcasp->dev, "release frame sync generators");
+	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, RFSRST);
+	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, XFSRST);
+	REG_DUMP(mcasp, DAVINCI_MCASP_GBLCTL_REG);
 
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_XCLKCHK_REG);
-	dev_info(mcasp->dev, "XCLKCHK=0x%X", val);
-
-
-	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG);
-	dev_info(mcasp->dev, "GBLCTL=0x%X", val);
+	dev_info(mcasp->dev, "Initalization finished");
+	REG_DUMP(mcasp, DAVINCI_MCASP_GBLCTL_REG);
+	REG_DUMP(mcasp, DAVINCI_MCASP_RSTAT_REG);
+	REG_DUMP(mcasp, DAVINCI_MCASP_XSTAT_REG);
 
 	pm_runtime_put(mcasp->dev);
 
