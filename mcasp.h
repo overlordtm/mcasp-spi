@@ -110,55 +110,65 @@
 /*
  * DAVINCI_MCASP_PFUNC_REG - Pin Function / GPIO Enable Register Bits
  */
-#define AXR(n)		(1<<n)
-#define PFUNC_AMUTE	BIT(25)
-#define ACLKX		BIT(26)
-#define AHCLKX		BIT(27)
-#define AFSX		BIT(28)
-#define ACLKR		BIT(29)
-#define AHCLKR		BIT(30)
-#define AFSR		BIT(31)
+#define PFUNC_AXR(n)	(1<<n)
+#define PFUNC_AMUTE		BIT(25)
+#define PFUNC_ACLKX		BIT(26)
+#define PFUNC_AHCLKX	BIT(27)
+#define PFUNC_AFSX		BIT(28)
+#define PFUNC_ACLKR		BIT(29)
+#define PFUNC_AHCLKR	BIT(30)
+#define PFUNC_AFSR		BIT(31)
 
 /*
  * DAVINCI_MCASP_PDIR_REG - Pin Direction Register Bits
  */
-#define AXR(n)		(1<<n)
-#define PDIR_AMUTE	BIT(25)
-#define ACLKX		BIT(26)
-#define AHCLKX		BIT(27)
-#define AFSX		BIT(28)
-#define ACLKR		BIT(29)
-#define AHCLKR		BIT(30)
-#define AFSR		BIT(31)
+#define PDIR_AXR(n)		(1<<n)
+#define PDIR_AMUTE		BIT(25)
+#define PDIR_ACLKX		BIT(26)
+#define PDIR_AHCLKX		BIT(27)
+#define PDIR_AFSX		BIT(28)
+#define PDIR_ACLKR		BIT(29)
+#define PDIR_AHCLKR		BIT(30)
+#define PDIR_AFSR		BIT(31)
 
 /*
  * DAVINCI_MCASP_DITCTL_REG - Transmit DIT Control Register Bits
  */
 #define DITEN	BIT(0)	/* Transmit DIT mode enable/disable */
-#define VA	BIT(2)
-#define VB	BIT(3)
+#define VA		BIT(2)
+#define VB		BIT(3)
 
 /*
  * DAVINCI_MCASP_XFMT_REG - Transmit Bitstream Format Register Bits
  */
-#define XROT(val)	(val)
-#define XBUSEL		BIT(3)
-#define XSSZ(val)	(val<<4)
-#define XPBIT(val)	(val<<8)
-#define XPAD(val)	(val<<13)
-#define XRVRS		BIT(15)
+#define XROT(val)		(val)
+#define XROT_MAKS		XROT(7)
+#define XBUSEL			BIT(3)
+#define XSSZ(val)		(val<<4)
+#define XSSZ_MASK		XSSZ(0xF)
+#define XPBIT(val)		(val<<8)
+#define XPBIT_MASK		XPBIT(0x1F)
+#define XPAD(val)		(val<<13)
+#define XPAD_MASK		XPAD(3)
+#define XRVRS			BIT(15)
 #define XDATDLY(val)	(val<<16)
+#define XDATDLY_MASK	XDATDLY(3)
 
 /*
  * DAVINCI_MCASP_RFMT_REG - Receive Bitstream Format Register Bits
  */
-#define RROT(val)	(val)
-#define RBUSEL		BIT(3)
-#define RSSZ(val)	(val<<4)
-#define RPBIT(val)	(val<<8)
-#define RPAD(val)	(val<<13)
-#define RRVRS		BIT(15)
+#define RROT(val)		(val)
+#define RROT_MASK		RROT(0x7)
+#define RBUSEL			BIT(3)
+#define RSSZ(val)		(val<<4)
+#define RSSZ_MASK		RSSZ(0xF)
+#define RPBIT(val)		(val<<8)
+#define RPBIT_MASK		RPBIT(0x1F)
+#define RPAD(val)		(val<<13)
+#define RPAD_MASK		RPAD(3)
+#define RRVRS			BIT(15)
 #define RDATDLY(val)	(val<<16)
+#define RDATDLY_MASK	RDATDLY(3)
 
 /*
  * DAVINCI_MCASP_AFSXCTL_REG -  Transmit Frame Control Register Bits
@@ -167,6 +177,7 @@
 #define FSXM		BIT(1)
 #define FXWID		BIT(4)
 #define XMOD(val)	(val<<7)
+#define XMOD_MASK	XMOD(0x1FF)
 
 /*
  * DAVINCI_MCASP_AFSRCTL_REG - Receive Frame Control Register Bits
@@ -175,6 +186,7 @@
 #define FSRM		BIT(1)
 #define FRWID		BIT(4)
 #define RMOD(val)	(val<<7)
+#define RMOD_MASK	RMOD(0x1FF)
 
 /*
  * DAVINCI_MCASP_ACLKXCTL_REG - Transmit Clock Control Register Bits
