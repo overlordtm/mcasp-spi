@@ -30,8 +30,6 @@
 #define REG_DUMP(MCASP, REG) \
 	dev_info(MCASP->dev, #REG " is 0x%08X", mcasp_get_reg(MCASP, REG));
 
-
-
 static const struct of_device_id mcasp_dt_ids[] = {
 	{
 		.compatible = "ti,am33xx-mcasp-audio",
@@ -124,28 +122,19 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 	// pm_runtime_get_sync(mcasp->dev);
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
-#ifdef MCASP_DEBUG_IRQTX
-	dev_info(mcasp->dev, "TX IRQ XSTAT=0x%X", stat);
-#endif // MCASP_DEBUG_IRQTX
 
 	if (stat & XUNDRN) {
-#ifdef MCASP_DEBUG_IRQTX
 		dev_warn(mcasp->dev, "Transmit buffer underflow");
-#endif
 		handled_mask |= XUNDRN;
 	}
 
 	if (stat & XSYNCERR) {
-#ifdef MCASP_DEBUG_IRQTX
 		dev_warn(mcasp->dev, "Transmit frame sync error");
-#endif // MCASP_DEBUG_IRQTX
 		handled_mask |= XSYNCERR;
 	}
 
 	if (stat & XCKFAIL) {
-#ifdef MCASP_DEBUG_IRQTX
 		dev_warn(mcasp->dev, "Transmit clock failure");
-#endif // MCASP_DEBUG_IRQTX
 		handled_mask |= XCKFAIL;
 	}
 
@@ -155,9 +144,6 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 	// }
 
 	if (stat & XDATA) {
-#ifdef MCASP_DEBUG_IRQTX
-		dev_warn(mcasp->dev, "Sending some data");
-#endif // MCASP_DEBUG_IRQTX
 		mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0xFFFFFFFF);
 		handled_mask |= XDATA;
 	}
@@ -178,10 +164,6 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 
 	/* Ack the handled event only */
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_XSTAT_REG, handled_mask);
-	// stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
-	// dev_info(mcasp->dev, "TX IRQ AFTER XSTAT=0x%X", stat);
-	REG_DUMP(mcasp, DAVINCI_MCASP_XSTAT_REG);
-	REG_DUMP(mcasp, DAVINCI_MCASP_SRCTL_REG(AXRNTX));
 
 	// pm_runtime_put(mcasp->dev);
 
@@ -198,28 +180,19 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 	// pm_runtime_get_sync(mcasp->dev);
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
-#ifdef MCASP_DEBUG_IRQRX
-	dev_info(mcasp->dev, "RX IRQ RSTAT=0x%X", stat);
-#endif // MCASP_DEBUG_IRQRX
 
 	if (stat & ROVRN) {
-#ifdef MCASP_DEBUG_IRQRX
 		dev_warn(mcasp->dev, "Receive buffer overflow");
-#endif // MCASP_DEBUG_IRQRX
 		handled_mask |= ROVRN;
 	}
 
 	if (stat & RSYNCERR) {
-#ifdef MCASP_DEBUG_IRQRX
 		dev_warn(mcasp->dev, "Receive frame sync error");
-#endif // MCASP_DEBUG_IRQRX
 		handled_mask |= RSYNCERR;
 	}
 
 	if (stat & RCKFAIL) {
-#ifdef MCASP_DEBUG_IRQRX
 		dev_warn(mcasp->dev, "Receive clock failure");
-#endif // MCASP_DEBUG_IRQRX
 		handled_mask |= RCKFAIL;
 	}
 
@@ -230,9 +203,6 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 
 	if (stat & RDATA) {
 		val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
-#ifdef MCASP_DEBUG_IRQRX
-		dev_info(mcasp->dev, "Received 0x%X", val);
-#endif // MCASP_DEBUG_IRQRX
 		handled_mask |= RDATA;
 	}
 
@@ -252,8 +222,6 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 
 	/* Ack the handled event only */
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_RSTAT_REG, handled_mask);
-	// stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
-	// dev_info(mcasp->dev, "RX IRQ AFTER RSTAT=0x%X", stat);
 
 	// pm_runtime_put(mcasp->dev);
 
@@ -322,7 +290,7 @@ static void mcasp_rx_init(struct davinci_mcasp *mcasp) {
 	REG_DUMP(mcasp, DAVINCI_MCASP_RCLKCHK_REG);
 
 	// set TDM
-	mcasp_set_reg(mcasp, DAVINCI_MCASP_RTDM_REG, 0xFC);
+	mcasp_set_reg(mcasp, DAVINCI_MCASP_RTDM_REG, 0x2);
 	REG_DUMP(mcasp, DAVINCI_MCASP_RTDM_REG);
 
 
@@ -375,7 +343,7 @@ static void mcasp_tx_init(struct davinci_mcasp *mcasp) {
 	REG_DUMP(mcasp, DAVINCI_MCASP_XCLKCHK_REG);
 
 	// set TDM
-	mcasp_set_reg(mcasp, DAVINCI_MCASP_XTDM_REG, 0xFC);
+	mcasp_set_reg(mcasp, DAVINCI_MCASP_XTDM_REG, 0x2);
 	REG_DUMP(mcasp, DAVINCI_MCASP_XTDM_REG);
 
 	return;
