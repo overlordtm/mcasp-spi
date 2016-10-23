@@ -354,7 +354,6 @@ static void mcasp_tx_init(struct davinci_mcasp *mcasp) {
 }
 
 static int mcasp_hw_init(struct davinci_mcasp *mcasp) {
-	u32 cnt;
 
 	pm_runtime_get_sync(mcasp->dev);
 	mcasp->revision = mcasp_get_reg(mcasp, DAVINCI_MCASP_REV_REG);
@@ -362,11 +361,6 @@ static int mcasp_hw_init(struct davinci_mcasp *mcasp) {
 
 	dev_info(mcasp->dev, "Starting intialization.");
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, 0x0);
-
-	cnt = 0;
-	while(mcasp_get_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG) != 0 && cnt < 100000)
-		cnt++;
-
 	REG_DUMP(mcasp, DAVINCI_MCASP_GBLCTL_REG);
 
 	// power configuration
@@ -522,7 +516,7 @@ static int mcaspspi_probe(struct platform_device *pdev)
 	irq = platform_get_irq_byname(pdev, "tx");
 	if (irq >= 0) {
 		irq_name = devm_kasprintf(&pdev->dev, GFP_KERNEL, "%s_tx", dev_name(&pdev->dev));
-		ret = devm_request_threaded_irq(&pdev->dev, irq, NULL, mcasp_tx_irq_handler, IRQF_ONESHOT | IRQF_SHARED, irq_name, mcasp);
+		ret = devm_request_threaded_irq(&pdev->dev, irq, mcasp_tx_irq_handler, NULL, IRQF_ONESHOT | IRQF_SHARED, irq_name, mcasp);
 
 		if (ret) {
 			dev_err(&pdev->dev, "TX IRQ request failed\n");
@@ -533,7 +527,7 @@ static int mcaspspi_probe(struct platform_device *pdev)
 	irq = platform_get_irq_byname(pdev, "rx");
 	if (irq >= 0) {
 		irq_name = devm_kasprintf(&pdev->dev, GFP_KERNEL, "%s_rx", dev_name(&pdev->dev));
-		ret = devm_request_threaded_irq(&pdev->dev, irq, NULL, mcasp_rx_irq_handler, IRQF_ONESHOT | IRQF_SHARED, irq_name, mcasp);
+		ret = devm_request_threaded_irq(&pdev->dev, irq, mcasp_rx_irq_handler, NULL, IRQF_ONESHOT | IRQF_SHARED, irq_name, mcasp);
 
 		if (ret) {
 			dev_err(&pdev->dev, "RX IRQ request failed\n");
