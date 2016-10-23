@@ -91,11 +91,11 @@ static void mcasp_set_ctl_reg(struct davinci_mcasp *mcasp, u32 ctl_reg, u32 val)
 	/* programming GBLCTL needs to read back from GBLCTL and verfiy */
 	/* loop count is to avoid the lock-up */
 	for (i = 0; i < 100000; i++) {
-		if ((mcasp_get_reg(mcasp, ctl_reg) & val) == val)
+		if ((mcasp_get_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG) & val) == val)
 			break;
 	}
 
-	if (i == 100000 && ((mcasp_get_reg(mcasp, ctl_reg) & val) != val))
+	if (i == 100000 && ((mcasp_get_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG) & val) != val))
 		dev_err(mcasp->dev, "GBLCTL write error\n");
 }
 
@@ -286,8 +286,8 @@ static void mcasp_rx_init(struct davinci_mcasp *mcasp) {
 	REG_DUMP(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG);
 
 	// ROVRN interrupt eanble
-	// mcasp_set_bits(mcasp, DAVINCI_MCASP_RINTCTL_REG, ROVRN);
-	// REG_DUMP(mcasp, DAVINCI_MCASP_RINTCTL_REG);
+	mcasp_set_bits(mcasp, DAVINCI_MCASP_RINTCTL_REG, ROVRN);
+	REG_DUMP(mcasp, DAVINCI_MCASP_RINTCTL_REG);
 
 	// clock check
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_RCLKCHK_REG, 0x00FF0003);
@@ -339,8 +339,8 @@ static void mcasp_tx_init(struct davinci_mcasp *mcasp) {
 	REG_DUMP(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG);
 
 	// XUNDRN interrupt eanble
-	// mcasp_set_bits(mcasp, DAVINCI_MCASP_XINTCTL_REG, XUNDRN);
-	// REG_DUMP(mcasp,DAVINCI_MCASP_XINTCTL_REG);
+	mcasp_set_bits(mcasp, DAVINCI_MCASP_XINTCTL_REG, XUNDRN);
+	REG_DUMP(mcasp,DAVINCI_MCASP_XINTCTL_REG);
 
 	// set clock check
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_XCLKCHK_REG, 0x00FF0003);
