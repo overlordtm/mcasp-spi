@@ -352,6 +352,8 @@ static void mcasp_tx_init(struct davinci_mcasp *mcasp) {
 }
 
 static int mcasp_hw_init(struct davinci_mcasp *mcasp) {
+	int cnt;
+
 
 	pm_runtime_get_sync(mcasp->dev);
 	mcasp->revision = mcasp_get_reg(mcasp, DAVINCI_MCASP_REV_REG);
@@ -438,6 +440,10 @@ static int mcasp_hw_init(struct davinci_mcasp *mcasp) {
 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, XSRCLR);
 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, RSRCLR);
 	REG_DUMP(mcasp, DAVINCI_MCASP_GBLCTL_REG);
+
+	cnt = 0;
+	while ((mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG) & XRDATA) && (cnt < 100000))
+		cnt++;
 
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_XSTAT_REG, 0xFFFF);
 	REG_DUMP(mcasp, DAVINCI_MCASP_XSTAT_REG);
