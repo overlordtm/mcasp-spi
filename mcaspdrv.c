@@ -1,3 +1,4 @@
+
 /*
  *  mcaspspi.c
  */
@@ -9,11 +10,16 @@
 #include <linux/interrupt.h>
 #include <linux/of_platform.h>
 #include <linux/of_device.h>
+#include <linux/device.h>
+#include <linux/cdev.h>
 #include <linux/platform_device.h>
 #include <linux/platform_data/davinci_asp.h>
 #include <linux/pm_runtime.h>
 #include <linux/clk.h>
 #include <linux/fs.h>
+#include <linux/circ_buf.h>
+#include <net/netlink.h>
+#include <net/genetlink.h>
 
 
 #include "mcasp.h"
@@ -23,12 +29,16 @@
 #define TDM_SLOTS	8
 
 #define MCASP_DEBUG
+// #define MCASP_REG_DEBUG
 
 #define MCASP_DEBUG_IRQTX
 #define MCASP_DEBUG_IRQRX
 
-#define REG_DUMP(MCASP, REG) \
-	dev_info(MCASP->dev, #REG " is 0x%08X", mcasp_get_reg(MCASP, REG));
+#ifdef MCASP_REG_DEBUG
+	#define REG_DUMP(MCASP, REG) dev_info(MCASP->dev, #REG " is 0x%08X", mcasp_get_reg(MCASP, REG));
+#else
+	#define REG_DUMP(MCASP, REG) /* noop */
+#endif // MCASP_REG_DEBUG
 
 static const struct of_device_id mcasp_dt_ids[] = {
 	{
@@ -43,7 +53,79 @@ struct davinci_mcasp {
 	struct device *dev;
 	struct clk *clk;
 
+	struct circ_buf tx_buf;
+	struct circ_buf rx_buf;
+
+	struct cdev cdev;
+
+	int majorNum;
+
 	u32 revision;
+};
+
+
+static int mcasp_dev_open(struct inode *ino, struct file *filep) {
+	struct davinci_mcasp *mcasp = container_of(ino->i_cdev, struct davinci_mcasp, cdev);
+	filep->private_data = mcasp;
+
+	printk(KERN_INFO "Device opened %x", mcasp->revision);
+
+	return 0;
+}
+
+static int mcasp_dev_release(struct inode *ino, struct file *filep) {
+	printk(KERN_INFO "Device release");
+	return 0;
+}
+
+static ssize_t mcasp_dev_read(struct file *filep, char __user *buf, size_t length, loff_t *offset) {
+	struct davinci_mcasp *mcasp = filep->private_data;
+	struct circ_buf rxbuf = mcasp->rx_buf;
+	u32 val =  0;
+	ssize_t retval = 0;
+
+	printk(KERN_INFO "Dev read %d %d", rxbuf.head, rxbuf.tail);
+
+	// consumer for rx buf
+	if(CIRC_CNT(rxbuf.head, rxbuf.tail, MCASP_RX_BUF_SIZE) > 0) {
+		val = rxbuf.buf[rxbuf.tail];
+		rxbuf.tail = (rxbuf.tail + 1) & (MCASP_RX_BUF_SIZE - 1);
+		dev_info(mcasp->dev, "Device read %x", val);
+	} else {
+		dev_warn(mcasp->dev, "Cannot read, empty buffer");
+	}
+
+
+	return retval;
+}
+
+static ssize_t mcasp_dev_write(struct file *filep, const char *buf, size_t length, loff_t *offset) {
+	struct davinci_mcasp *mcasp = filep->private_data;
+	struct circ_buf txbuf = mcasp->tx_buf;
+	ssize_t retval = 1;
+	printk(KERN_INFO "Dev write %d %d", length, offset);
+
+	// producer for tx buff
+	if(CIRC_SPACE(txbuf.head, txbuf.tail, MCASP_TX_BUF_SIZE) > 0) {
+		txbuf.buf[txbuf.head] = 0xABCD;
+		txbuf.head = (txbuf.head + 1) & (MCASP_TX_BUF_SIZE - 1);
+		dev_info(mcasp->dev, "Wrote smth");
+	} else {
+		dev_warn(mcasp->dev, "Cannot write, buffer full");
+	}
+
+	return retval;
+}
+
+/*
+ * Create a set of file operations for our proc files.
+ */
+static struct file_operations mcasp_file_ops = {
+	.owner   = THIS_MODULE,
+	.open    = mcasp_dev_open,
+	.write   = mcasp_dev_write,
+	.read    = mcasp_dev_read,
+	.release = mcasp_dev_release,
 };
 
 /*
@@ -103,28 +185,25 @@ static void mcasp_set_ctl_reg(struct davinci_mcasp *mcasp, u32 ctl_reg, u32 val)
  * end of register stuff
  */
 
-
-// static ssize_t mcasp_show_revision(struct device *dev, struct device_attribute *attr, char *buf) {
-// 	dev_info(dev, "mcasp_show_revision %x %x", dev, buf);
-// 	// struct davinci_mcasp *mcasp = dev_get_drvdata(dev);
-
-// 	// return sprintf(buf, "0x%X", mcasp->revision);
-// 	return 0;
-// }
-// static DEVICE_ATTR(revision, 0444, mcasp_show_revision, NULL);
-
 static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 {
 	struct davinci_mcasp *mcasp = (struct davinci_mcasp *)data;
+	struct circ_buf buf = mcasp->tx_buf;
 	u32 handled_mask = 0;
 	u32 stat;
 
-	// pm_runtime_get_sync(mcasp->dev);
-
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
 
+	// consumer for tx buf
 	if (stat & XDATA) {
-		mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0xFFFFFFFF);
+		if(CIRC_CNT(buf.head, buf.tail, MCASP_TX_BUF_SIZE) > 0) {
+			u32 data = buf.buf[buf.tail];
+			mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), data);
+
+			buf.tail = (buf.tail + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
+		} else {
+			mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0xFFFFFFFF);
+		}
 		handled_mask |= XDATA;
 	}
 
@@ -133,32 +212,6 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 		handled_mask |= XUNDRN;
 	}
 
-	// if (stat & XSYNCERR) {
-	// 	dev_warn(mcasp->dev, "Transmit frame sync error");
-	// 	handled_mask |= XSYNCERR;
-	// }
-
-	// if (stat & XCKFAIL) {
-	// 	dev_warn(mcasp->dev, "Transmit clock failure");
-	// 	handled_mask |= XCKFAIL;
-	// }
-
-	// if (stat & XDMAERR) {
-	// 	dev_warn(mcasp->dev, "Transmit DMA failure");
-	// 	handled_mask |= XDMAERR;
-	// }
-
-
-	// if (stat & XLAST) {
-	// 	dev_warn(mcasp->dev, "Transmit last slot");
-	// 	handled_mask |= XLAST;
-	// }
-
-	// if (stat & XSTAFRM) {
-	// 	dev_warn(mcasp->dev, "Transmit start of frame");
-	// 	handled_mask |= XSTAFRM;
-	// }
-
 	if (stat & XRERR) {
 		handled_mask |= XRERR;
 	}
@@ -166,24 +219,26 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 	/* Ack the handled event only */
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_XSTAT_REG, handled_mask);
 
-	// pm_runtime_put(mcasp->dev);
-
 	return IRQ_RETVAL(handled_mask);
 }
 
 static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 {
 	struct davinci_mcasp *mcasp = (struct davinci_mcasp *)data;
+	struct circ_buf buf = mcasp->tx_buf;
 	u32 handled_mask = 0;
 	u32 stat;
 	u32 val;
 
-	// pm_runtime_get_sync(mcasp->dev);
-
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
 
+	// producer for rx buf
 	if (stat & RDATA) {
 		val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
+		if(CIRC_SPACE(buf.head, buf.tail, MCASP_TX_BUF_SIZE) > 0) {
+			buf.buf[buf.head] = val;
+			buf.head = (buf.head + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
+		}
 		handled_mask |= RDATA;
 	}
 
@@ -192,40 +247,12 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 		handled_mask |= ROVRN;
 	}
 
-	// if (stat & RSYNCERR) {
-	// 	dev_warn(mcasp->dev, "Receive frame sync error");
-	// 	handled_mask |= RSYNCERR;
-	// }
-
-	// if (stat & RCKFAIL) {
-	// 	dev_warn(mcasp->dev, "Receive clock failure");
-	// 	handled_mask |= RCKFAIL;
-	// }
-
-	// if (stat & RDMAERR) {
-	// 	dev_warn(mcasp->dev, "Receive DMA error");
-	// 	handled_mask |= RDMAERR;
-	// }
-
-
-	// if (stat & RLAST) {
-	// 	dev_warn(mcasp->dev, "Receive last slot");
-	// 	handled_mask |= RLAST;
-	// }
-
-	// if (stat & RSTAFRM) {
-	// 	dev_warn(mcasp->dev, "Received start of frame");
-	// 	handled_mask |= RSTAFRM;
-	// }
-
 	if (stat & XRERR) {
 		handled_mask |= XRERR;
 	}
 
 	/* Ack the handled event only */
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_RSTAT_REG, handled_mask);
-
-	// pm_runtime_put(mcasp->dev);
 
 	return IRQ_RETVAL(handled_mask);
 }
@@ -474,6 +501,59 @@ static int mcasp_hw_init(struct davinci_mcasp *mcasp) {
 	return 0;
 }
 
+static int mcasp_sw_init(struct davinci_mcasp *mcasp) {
+	unsigned long page;
+	int retval, err = 0;
+	dev_t chrdev = 0;
+
+	page = get_zeroed_page(GFP_KERNEL);
+	if (!page) {
+		retval =  -ENOMEM;
+		goto err;
+	}
+
+	if(mcasp->tx_buf.buf) {
+		free_page(page);
+	} else {
+		mcasp->tx_buf.buf = (unsigned char *) page;
+	}
+
+	mcasp->tx_buf.head = mcasp->tx_buf.tail = 0;
+	mcasp->rx_buf.head = mcasp->rx_buf.tail = 0;
+
+	// alloc_chrdev_region — register a range of char device numbers
+	err = alloc_chrdev_region(&chrdev, 0, 1, MCASP_DEVICE_NAME);
+	if (err < 0) {
+		dev_alert(mcasp->dev, "failed to register a majon number");
+		return err;
+	}
+
+	mcasp->majorNum = MAJOR(chrdev);
+
+	cdev_init(&mcasp->cdev, &mcasp_file_ops);
+	mcasp->cdev.owner = THIS_MODULE;
+	mcasp->cdev.ops = &mcasp_file_ops;
+
+	err = cdev_add(&mcasp->cdev, chrdev, 1);
+	if(err) {
+		dev_alert(mcasp->dev, "cdev_add failed %d", err);
+		return err;
+	}
+
+	dev_info(mcasp->dev, "registred device %d", mcasp->majorNum);
+	dev_info(mcasp->dev, "mknod /dev/mcasp c %d 0", mcasp->majorNum);
+
+	return retval;
+
+// err2:
+	// class_destroy(mcasp->class);
+
+err:
+	unregister_chrdev(mcasp->majorNum, MCASP_DEVICE_NAME);
+
+	return retval;
+}
+
 
 static int mcaspspi_probe(struct platform_device *pdev)
 {
@@ -552,6 +632,7 @@ static int mcaspspi_probe(struct platform_device *pdev)
 	clock_rate = clk_get_rate(mcasp->clk);
 	dev_info(mcasp->dev, "Functional clock rate is %d Hz", clock_rate);
 
+	mcasp_sw_init(mcasp);
 	mcasp_hw_init(mcasp);
 
 	return 0;
@@ -563,7 +644,16 @@ err:
 
 static int mcaspspi_remove(struct platform_device *pdev)
 {
+	struct davinci_mcasp *mcasp = dev_get_drvdata(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
+
+	if (mcasp->tx_buf.buf)
+		free_page((long unsigned int) mcasp->tx_buf.buf);
+
+	if (mcasp->rx_buf.buf)
+		free_page((long unsigned int) mcasp->rx_buf.buf);
+
+	cdev_del(&mcasp->cdev);
 
 	return 0;
 }

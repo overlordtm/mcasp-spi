@@ -20,6 +20,13 @@
 #ifndef DAVINCI_MCASP_H
 #define DAVINCI_MCASP_H
 
+
+#define MCASP_TX_BUF_SIZE	PAGE_SIZE
+#define MCASP_RX_BUF_SIZE	PAGE_SIZE
+
+#define MCASP_DEVICE_NAME	"mcasp"
+#define MCASP_CLASS_NAME	"mcaspclass"
+
 /*
  * McASP register definitions
  */
