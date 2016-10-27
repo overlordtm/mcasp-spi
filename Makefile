@@ -20,10 +20,10 @@ clean:
 transfer:
 	scp Makefile mcasp.h mcaspdrv.c am335x-boneblack-mcasp0.dts debian@192.168.7.2:~/mcasp
 
-try: rmmod insmod lsmod
+try: rmmod insmod
 
 rmmod:
-	rmmod mcaspdrv.ko
+	rmmod mcaspdrv.ko || true
 
 insmod:
 	insmod mcaspdrv.ko
