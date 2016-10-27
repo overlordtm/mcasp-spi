@@ -196,7 +196,6 @@ static void mcasp_set_ctl_reg(struct davinci_mcasp *mcasp, u32 ctl_reg, u32 val)
 static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 {
 	struct davinci_mcasp *mcasp = (struct davinci_mcasp *)data;
-	struct circ_buf buf = mcasp->tx_buf;
 	u32 handled_mask = 0;
 	u32 stat;
 
@@ -204,10 +203,10 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 
 	// consumer for tx buf
 	if (stat & XDATA) {
-		if(CIRC_CNT(buf.head, buf.tail, MCASP_TX_BUF_SIZE) > 0) {
-			u32 data = buf.buf[buf.tail];
+		if(CIRC_CNT(mcasp->tx_buf.head, mcasp->tx_buf.tail, MCASP_TX_BUF_SIZE) > 0) {
+			u32 data = mcasp->tx_buf.buf[mcasp->tx_buf.tail];
 			mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), data);
-			buf.tail = (buf.tail + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
+			mcasp->tx_buf.tail = (mcasp->tx_buf.tail + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
 		} else {
 			mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0xFFFFFFFF);
 		}
@@ -215,7 +214,7 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 	}
 
 	if (stat & XUNDRN) {
-		dev_warn(mcasp->dev, "Transmit buffer underflow");
+		dev_alert(mcasp->dev, "Transmit buffer underflow");
 		handled_mask |= XUNDRN;
 	}
 
@@ -232,7 +231,6 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 {
 	struct davinci_mcasp *mcasp = (struct davinci_mcasp *)data;
-	struct circ_buf buf = mcasp->tx_buf;
 	u32 handled_mask = 0;
 	u32 stat;
 	u32 val;
@@ -242,15 +240,15 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 	// producer for rx buf
 	if (stat & RDATA) {
 		val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
-		if(CIRC_SPACE(buf.head, buf.tail, MCASP_TX_BUF_SIZE) > 0) {
-			buf.buf[buf.head] = val;
-			buf.head = (buf.head + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
+		if(CIRC_SPACE(mcasp->rx_buf.head, mcasp->rx_buf.tail, MCASP_TX_BUF_SIZE) > 0) {
+			mcasp->rx_buf.buf[mcasp->rx_buf.head] = val;
+			mcasp->rx_buf.head = (mcasp->rx_buf.head + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
 		}
 		handled_mask |= RDATA;
 	}
 
 	if (stat & ROVRN) {
-		dev_warn(mcasp->dev, "Receive buffer overflow");
+		dev_alert(mcasp->dev, "Receive buffer overflow");
 		handled_mask |= ROVRN;
 	}
 
