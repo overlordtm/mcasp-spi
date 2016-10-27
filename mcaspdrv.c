@@ -535,8 +535,8 @@ static int mcasp_sw_init(struct davinci_mcasp *mcasp) {
 		mcasp->rx_buf.buf = (unsigned char *) rx_page;
 	}
 
-	mcasp->tx_buf.head = mcasp->tx_buf.tail = 42;
-	mcasp->rx_buf.head = mcasp->rx_buf.tail = 43;
+	mcasp->tx_buf.head = mcasp->tx_buf.tail = 0;
+	mcasp->rx_buf.head = mcasp->rx_buf.tail = 0;
 
 	// alloc_chrdev_region — register a range of char device numbers
 	err = alloc_chrdev_region(&chrdev, 0, 1, MCASP_DEVICE_NAME);
