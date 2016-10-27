@@ -67,32 +67,33 @@ struct davinci_mcasp {
 static int mcasp_dev_open(struct inode *ino, struct file *filep) {
 	struct davinci_mcasp *mcasp = container_of(ino->i_cdev, struct davinci_mcasp, cdev);
 	filep->private_data = mcasp;
-
-	printk(KERN_INFO "Device opened %x", mcasp->revision);
-
 	return 0;
 }
 
 static int mcasp_dev_release(struct inode *ino, struct file *filep) {
-	printk(KERN_INFO "Device release");
 	return 0;
 }
 
 static ssize_t mcasp_dev_read(struct file *filep, char __user *buf, size_t length, loff_t *offset) {
 	struct davinci_mcasp *mcasp = filep->private_data;
-	struct circ_buf rxbuf = mcasp->rx_buf;
 	u32 val =  0;
 	ssize_t retval = 0;
 
-	printk(KERN_INFO "Dev read %d %d", rxbuf.head, rxbuf.tail);
+	dev_info(mcasp->dev, "Read request on char dev. length:%zu offset:%lld head:%d tail:%d", length, *offset, mcasp->rx_buf.head, mcasp->rx_buf.tail);
 
 	// consumer for rx buf
-	if(CIRC_CNT(rxbuf.head, rxbuf.tail, MCASP_RX_BUF_SIZE) > 0) {
-		val = rxbuf.buf[rxbuf.tail];
-		rxbuf.tail = (rxbuf.tail + 1) & (MCASP_RX_BUF_SIZE - 1);
+	if(CIRC_CNT(mcasp->rx_buf.head, mcasp->rx_buf.tail, MCASP_RX_BUF_SIZE) > 0) {
+		val = mcasp->rx_buf.buf[mcasp->rx_buf.tail];
+		mcasp->rx_buf.tail = (mcasp->rx_buf.tail + sizeof(u32)) & (MCASP_RX_BUF_SIZE - 1);
 		dev_info(mcasp->dev, "Device read %x", val);
+
+		if(copy_to_user(buf, &val, sizeof(u32))) {
+			retval = -EFAULT;
+		}
+
+		retval = length;
 	} else {
-		dev_warn(mcasp->dev, "Cannot read, empty buffer");
+		dev_warn(mcasp->dev, "Cannot read, empty buffer head:%d, tail:%d", mcasp->rx_buf.head, mcasp->rx_buf.tail);
 	}
 
 
@@ -101,17 +102,24 @@ static ssize_t mcasp_dev_read(struct file *filep, char __user *buf, size_t lengt
 
 static ssize_t mcasp_dev_write(struct file *filep, const char *buf, size_t length, loff_t *offset) {
 	struct davinci_mcasp *mcasp = filep->private_data;
-	struct circ_buf txbuf = mcasp->tx_buf;
 	ssize_t retval = 1;
-	printk(KERN_INFO "Dev write %d %d", length, offset);
+	u32 val;
+
+	dev_info(mcasp->dev, "Write request on char dev. length:%zu offset:%lld head:%d tail:%d", length, *offset, mcasp->tx_buf.head, mcasp->tx_buf.tail);
 
 	// producer for tx buff
-	if(CIRC_SPACE(txbuf.head, txbuf.tail, MCASP_TX_BUF_SIZE) > 0) {
-		txbuf.buf[txbuf.head] = 0xABCD;
-		txbuf.head = (txbuf.head + 1) & (MCASP_TX_BUF_SIZE - 1);
-		dev_info(mcasp->dev, "Wrote smth");
+	if(CIRC_SPACE(mcasp->tx_buf.head, mcasp->tx_buf.tail, MCASP_TX_BUF_SIZE) > 0) {
+
+		if(copy_from_user(&val, buf, sizeof(u32))) {
+			retval = -EFAULT;
+		}
+
+		mcasp->tx_buf.buf[mcasp->tx_buf.head] = val;
+		mcasp->tx_buf.head = (mcasp->tx_buf.head + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
+		dev_info(mcasp->dev, "Wrote to tx_buf val:%x head:%d tail:%d", val, mcasp->tx_buf.head, mcasp->tx_buf.tail);
+		retval = length;
 	} else {
-		dev_warn(mcasp->dev, "Cannot write, buffer full");
+		dev_warn(mcasp->dev, "Cannot write, buffer full head:%d, tail:%d", mcasp->tx_buf.head, mcasp->tx_buf.tail);
 	}
 
 	return retval;
@@ -199,7 +207,6 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 		if(CIRC_CNT(buf.head, buf.tail, MCASP_TX_BUF_SIZE) > 0) {
 			u32 data = buf.buf[buf.tail];
 			mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), data);
-
 			buf.tail = (buf.tail + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
 		} else {
 			mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0xFFFFFFFF);
@@ -502,24 +509,36 @@ static int mcasp_hw_init(struct davinci_mcasp *mcasp) {
 }
 
 static int mcasp_sw_init(struct davinci_mcasp *mcasp) {
-	unsigned long page;
+	unsigned long tx_page, rx_page;
 	int retval, err = 0;
 	dev_t chrdev = 0;
 
-	page = get_zeroed_page(GFP_KERNEL);
-	if (!page) {
+	tx_page = get_zeroed_page(GFP_KERNEL);
+	if (!tx_page) {
+		retval =  -ENOMEM;
+		goto err;
+	}
+
+	rx_page = get_zeroed_page(GFP_KERNEL);
+	if (!rx_page) {
 		retval =  -ENOMEM;
 		goto err;
 	}
 
 	if(mcasp->tx_buf.buf) {
-		free_page(page);
+		free_page(tx_page);
 	} else {
-		mcasp->tx_buf.buf = (unsigned char *) page;
+		mcasp->tx_buf.buf = (unsigned char *) tx_page;
 	}
 
-	mcasp->tx_buf.head = mcasp->tx_buf.tail = 0;
-	mcasp->rx_buf.head = mcasp->rx_buf.tail = 0;
+	if(mcasp->rx_buf.buf) {
+		free_page(rx_page);
+	} else {
+		mcasp->rx_buf.buf = (unsigned char *) rx_page;
+	}
+
+	mcasp->tx_buf.head = mcasp->tx_buf.tail = 42;
+	mcasp->rx_buf.head = mcasp->rx_buf.tail = 43;
 
 	// alloc_chrdev_region — register a range of char device numbers
 	err = alloc_chrdev_region(&chrdev, 0, 1, MCASP_DEVICE_NAME);
