@@ -75,18 +75,11 @@ static int mcasp_stop_rx(struct davinci_mcasp *);
 static int mcasp_dev_open(struct inode *ino, struct file *filep) {
 	struct davinci_mcasp *mcasp = container_of(ino->i_cdev, struct davinci_mcasp, cdev);
 	filep->private_data = mcasp;
-
-	mcasp_start(mcasp);
-
 	return 0;
 }
 
 static int mcasp_dev_release(struct inode *ino, struct file *filep) {
-
-	struct davinci_mcasp *mcasp = container_of(ino->i_cdev, struct davinci_mcasp, cdev);
-
-	mcasp_stop(mcasp);
-
+	// struct davinci_mcasp *mcasp = container_of(ino->i_cdev, struct davinci_mcasp, cdev);
 	return 0;
 }
 
@@ -220,10 +213,10 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 
 	// consumer for tx buf
 	if (stat & XDATA) {
-		// if(CIRC_CNT(mcasp->tx_buf.head, mcasp->tx_buf.tail, MCASP_TX_BUF_SIZE) > 0) {
-		// 	val = mcasp->tx_buf.buf[mcasp->tx_buf.tail];
-		// 	mcasp->tx_buf.tail = (mcasp->tx_buf.tail + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
-		// }
+		if(CIRC_CNT(mcasp->tx_buf.head, mcasp->tx_buf.tail, MCASP_TX_BUF_SIZE) > 0) {
+			val = mcasp->tx_buf.buf[mcasp->tx_buf.tail];
+			mcasp->tx_buf.tail = (mcasp->tx_buf.tail + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
+		}
 		mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), val);
 		handled_mask |= XDATA;
 	}
@@ -257,12 +250,12 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 	// producer for rx buf
 	if (stat & RDATA) {
 		val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
-		// if(CIRC_SPACE(mcasp->rx_buf.head, mcasp->rx_buf.tail, MCASP_TX_BUF_SIZE) > 0) {
-		// 	mcasp->rx_buf.buf[mcasp->rx_buf.head] = val;
-		// 	mcasp->rx_buf.head = (mcasp->rx_buf.head + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
-		// } else {
-		// 	dev_alert(mcasp->dev, "rx_buf overflow");
-		// }
+		if(CIRC_SPACE(mcasp->rx_buf.head, mcasp->rx_buf.tail, MCASP_TX_BUF_SIZE) > 0) {
+			mcasp->rx_buf.buf[mcasp->rx_buf.head] = val;
+			mcasp->rx_buf.head = (mcasp->rx_buf.head + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
+		} else {
+			dev_alert(mcasp->dev, "rx_buf overflow");
+		}
 		handled_mask |= RDATA;
 	}
 
@@ -719,7 +712,8 @@ err:
 static int mcaspspi_remove(struct platform_device *pdev)
 {
 	struct davinci_mcasp *mcasp = dev_get_drvdata(&pdev->dev);
-	pm_runtime_disable(&pdev->dev);
+
+	mcasp_stop(mcasp);
 
 	if (mcasp->tx_buf.buf)
 		free_page((long unsigned int) mcasp->tx_buf.buf);
@@ -729,6 +723,7 @@ static int mcaspspi_remove(struct platform_device *pdev)
 
 	cdev_del(&mcasp->cdev);
 
+	pm_runtime_disable(&pdev->dev);
 	return 0;
 }
 
