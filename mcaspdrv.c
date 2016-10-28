@@ -88,6 +88,7 @@ static ssize_t mcasp_dev_read(struct file *filep, char __user *buf, size_t lengt
 	u32 val =  0;
 	ssize_t retval = 0;
 
+	dev_info(mcasp->dev, "Mcasp ptr in read %p", mcasp);
 	dev_info(mcasp->dev, "Read request on char dev. length:%zu offset:%lld head:%d tail:%d", length, *offset, mcasp->rx_buf.head, mcasp->rx_buf.tail);
 
 	// consumer for rx buf
@@ -114,6 +115,7 @@ static ssize_t mcasp_dev_write(struct file *filep, const char *buf, size_t lengt
 	ssize_t retval = 1;
 	u32 val;
 
+	dev_info(mcasp->dev, "Mcasp ptr in write %p", mcasp);
 	dev_info(mcasp->dev, "Write request on char dev. length:%zu offset:%lld head:%d tail:%d", length, *offset, mcasp->tx_buf.head, mcasp->tx_buf.tail);
 
 	// producer for tx buff
