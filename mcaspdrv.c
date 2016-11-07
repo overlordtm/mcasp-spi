@@ -28,6 +28,9 @@
 #define AXRNRX		1
 #define TDM_SLOTS	8
 
+#define CLK_DIV		23
+#define HCLK_DIV	0
+
 #define MCASP_DEBUG
 // #define MCASP_REG_DEBUG
 
@@ -75,11 +78,15 @@ static int mcasp_stop_rx(struct davinci_mcasp *);
 static int mcasp_dev_open(struct inode *ino, struct file *filep) {
 	struct davinci_mcasp *mcasp = container_of(ino->i_cdev, struct davinci_mcasp, cdev);
 	filep->private_data = mcasp;
+
+	// pm_runtime_get_sync(mcasp->dev);
+
 	return 0;
 }
 
 static int mcasp_dev_release(struct inode *ino, struct file *filep) {
-	// struct davinci_mcasp *mcasp = container_of(ino->i_cdev, struct davinci_mcasp, cdev);
+	struct davinci_mcasp *mcasp = container_of(ino->i_cdev, struct davinci_mcasp, cdev);
+	// pm_runtime_put(mcasp->dev);
 	return 0;
 }
 
@@ -213,8 +220,10 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
 
+	// printk(KERN_INFO "tx irq %08X %d %d %p", stat, mcasp->tx_buf.head, mcasp->tx_buf.tail, mcasp);
 	// consumer for tx buf
 	if (stat & XDATA) {
+		// printk(KERN_INFO "XDATA");
 		if(CIRC_CNT(mcasp->tx_buf.head, mcasp->tx_buf.tail, MCASP_TX_BUF_SIZE) > 0) {
 			val = mcasp->tx_buf.buf[mcasp->tx_buf.tail];
 			mcasp->tx_buf.tail = (mcasp->tx_buf.tail + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
@@ -225,9 +234,13 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 
 	if (stat & XUNDRN) {
 		dev_err_ratelimited(mcasp->dev, "Transmit buffer underflow XUNDRN");
-		dev_info(mcasp->dev, "Transmit buffer underflow XUNDRN");
-		mcasp_stop_tx(mcasp);
+		// dev_info(mcasp->dev, "Transmit buffer underflow XUNDRN");
+		// mcasp_set_reg(mcasp, DAVINCI_MCASP_XGBLCTL_REG, 0x0);
 		handled_mask |= XUNDRN;
+	}
+
+	if (stat & XLAST) {
+		handled_mask |= XLAST;
 	}
 
 	if (stat & XRERR) {
@@ -249,8 +262,10 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
 
+	// printk(KERN_INFO "rx irq %08X %d %d %p", stat, mcasp->rx_buf.head, mcasp->rx_buf.tail, mcasp);
 	// producer for rx buf
 	if (stat & RDATA) {
+		// printk(KERN_INFO "RDATA");
 		val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
 		if(CIRC_SPACE(mcasp->rx_buf.head, mcasp->rx_buf.tail, MCASP_TX_BUF_SIZE) > 0) {
 			mcasp->rx_buf.buf[mcasp->rx_buf.head] = val;
@@ -263,9 +278,13 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 
 	if (stat & ROVRN) {
 		dev_err_ratelimited(mcasp->dev, "Receive buffer overflow ROVRN");
-		dev_info(mcasp->dev, "Receive buffer overflow ROVRN");
-		mcasp_stop_rx(mcasp);
+		// dev_info(mcasp->dev, "Receive buffer overflow ROVRN");
+		// mcasp_set_reg(mcasp, DAVINCI_MCASP_RGBLCTL_REG, 0x0);
 		handled_mask |= ROVRN;
+	}
+
+	if (stat & RLAST) {
+		handled_mask |= RLAST;
 	}
 
 	if (stat & XRERR) {
@@ -300,12 +319,12 @@ static void mcasp_rx_init(struct davinci_mcasp *mcasp) {
 
 	// bit clock setup
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG, CLKRM | CLKRP);
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG, CLKRDIV(2), CLKRDIV_MASK);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_ACLKRCTL_REG, CLKRDIV(CLK_DIV), CLKRDIV_MASK);
 	REG_DUMP(mcasp, DAVINCI_MCASP_ACLKRCTL_REG);
 
 	// high clock
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, HCLKRM | HCLKRP);
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, HCLKRDIV(7), HCLKRDIV_MASK);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG, HCLKRDIV(HCLK_DIV), HCLKRDIV_MASK);
 	REG_DUMP(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG);
 
 	// ROVRN interrupt eanble
@@ -348,12 +367,12 @@ static void mcasp_tx_init(struct davinci_mcasp *mcasp) {
 	// sync clock, TX provides RX clock
 	mcasp_clr_bits(mcasp, DAVINCI_MCASP_ACLKXCTL_REG, ASYNC);
 	// clock
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_ACLKXCTL_REG, CLKXDIV(2), CLKXDIV_MASK);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_ACLKXCTL_REG, CLKXDIV(CLK_DIV), CLKXDIV_MASK);
 	REG_DUMP(mcasp, DAVINCI_MCASP_ACLKXCTL_REG);
 
 	// high clock
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG, HCLKXM | HCLKXP);
-	mcasp_mod_bits(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG, HCLKXDIV(7), HCLKXDIV_MASK);
+	mcasp_mod_bits(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG, HCLKXDIV(HCLK_DIV), HCLKXDIV_MASK);
 	REG_DUMP(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG);
 
 	// XUNDRN interrupt eanble
@@ -372,7 +391,7 @@ static void mcasp_tx_init(struct davinci_mcasp *mcasp) {
 }
 
 static int mcasp_hw_init(struct davinci_mcasp *mcasp) {
-	pm_runtime_get_sync(mcasp->dev);
+	// pm_runtime_get_sync(mcasp->dev);
 
 	mcasp->revision = mcasp_get_reg(mcasp, DAVINCI_MCASP_REV_REG);
 	REG_DUMP(mcasp, DAVINCI_MCASP_REV_REG);
@@ -439,7 +458,7 @@ static int mcasp_hw_init(struct davinci_mcasp *mcasp) {
 	REG_DUMP(mcasp, DAVINCI_MCASP_RSTAT_REG);
 	REG_DUMP(mcasp, DAVINCI_MCASP_XSTAT_REG);
 
-	pm_runtime_put(mcasp->dev);
+	// pm_runtime_put(mcasp->dev);
 
 	return 0;
 }
@@ -500,9 +519,6 @@ static int mcasp_sw_init(struct davinci_mcasp *mcasp) {
 
 	return retval;
 
-// err2:
-	// class_destroy(mcasp->class);
-
 err:
 	unregister_chrdev(mcasp->majorNum, MCASP_DEVICE_NAME);
 
@@ -514,7 +530,7 @@ static int mcasp_start_tx(struct davinci_mcasp *mcasp) {
 
 	mcasp->tx_buf.head = mcasp->tx_buf.tail = 0;
 
-	pm_runtime_get_sync(mcasp->dev);
+	// pm_runtime_get_sync(mcasp->dev);
 
 	dev_info(mcasp->dev, "Starting high freq TX clock");
 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, XHCLKRST);
@@ -535,12 +551,14 @@ static int mcasp_start_tx(struct davinci_mcasp *mcasp) {
 	dev_info(mcasp->dev, "Starting TX frame sync");
 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, XFSRST);
 
+	mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0xFF);
+
 	dev_info(mcasp->dev, "Enabling XDATA interrupt");
 	mcasp_set_bits(mcasp, DAVINCI_MCASP_XINTCTL_REG, XDATA);
 
 	REG_DUMP_FORCE(mcasp, DAVINCI_MCASP_XSTAT_REG);
 
-	pm_runtime_put(mcasp->dev);
+	// pm_runtime_put(mcasp->dev);
 	return 0;
 }
 
@@ -548,7 +566,7 @@ static int mcasp_start_rx(struct davinci_mcasp *mcasp) {
 
 	mcasp->rx_buf.head = mcasp->rx_buf.tail = 0;
 
-	pm_runtime_get_sync(mcasp->dev);
+	// pm_runtime_get_sync(mcasp->dev);
 
 	dev_info(mcasp->dev, "Starting high freq RX clock");
 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, RHCLKRST);
@@ -570,7 +588,7 @@ static int mcasp_start_rx(struct davinci_mcasp *mcasp) {
 
 	REG_DUMP_FORCE(mcasp, DAVINCI_MCASP_RSTAT_REG);
 
-	pm_runtime_put(mcasp->dev);
+	// pm_runtime_put(mcasp->dev);
 	return 0;
 }
 
@@ -584,7 +602,7 @@ static int mcasp_start(struct davinci_mcasp *mcasp) {
 }
 
 static int mcasp_stop_tx(struct davinci_mcasp *mcasp) {
-	pm_runtime_get_sync(mcasp->dev);
+	// pm_runtime_get_sync(mcasp->dev);
 
 	dev_info(mcasp->dev, "Stopping McASP TX unit");
 	REG_DUMP_FORCE(mcasp, DAVINCI_MCASP_XSTAT_REG);
@@ -593,13 +611,13 @@ static int mcasp_stop_tx(struct davinci_mcasp *mcasp) {
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_XSTAT_REG, 0xFFFF);
 	REG_DUMP_FORCE(mcasp, DAVINCI_MCASP_XSTAT_REG);
 
-	pm_runtime_put(mcasp->dev);
+	// pm_runtime_put(mcasp->dev);
 
 	return 0;
 }
 
 static int mcasp_stop_rx(struct davinci_mcasp *mcasp) {
-	pm_runtime_get_sync(mcasp->dev);
+	// pm_runtime_get_sync(mcasp->dev);
 
 	dev_info(mcasp->dev, "Stopping McASP RX unit");
 	REG_DUMP_FORCE(mcasp, DAVINCI_MCASP_RSTAT_REG);
@@ -608,7 +626,7 @@ static int mcasp_stop_rx(struct davinci_mcasp *mcasp) {
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_RSTAT_REG, 0xFFFF);
 	REG_DUMP_FORCE(mcasp, DAVINCI_MCASP_RSTAT_REG);
 
-	pm_runtime_put(mcasp->dev);
+	// pm_runtime_put(mcasp->dev);
 
 	return 0;
 }
@@ -668,7 +686,7 @@ static int mcaspspi_probe(struct platform_device *pdev)
 	irq = platform_get_irq_byname(pdev, "tx");
 	if (irq >= 0) {
 		irq_name = devm_kasprintf(&pdev->dev, GFP_KERNEL, "%s_tx", dev_name(&pdev->dev));
-		ret = devm_request_threaded_irq(&pdev->dev, irq, mcasp_tx_irq_handler, NULL, IRQF_ONESHOT | IRQF_SHARED, irq_name, mcasp);
+		ret = devm_request_irq(&pdev->dev, irq, mcasp_tx_irq_handler, IRQF_NO_THREAD, irq_name, mcasp);
 
 		if (ret) {
 			dev_err(&pdev->dev, "TX IRQ request failed\n");
@@ -679,7 +697,7 @@ static int mcaspspi_probe(struct platform_device *pdev)
 	irq = platform_get_irq_byname(pdev, "rx");
 	if (irq >= 0) {
 		irq_name = devm_kasprintf(&pdev->dev, GFP_KERNEL, "%s_rx", dev_name(&pdev->dev));
-		ret = devm_request_threaded_irq(&pdev->dev, irq, mcasp_rx_irq_handler, NULL, IRQF_ONESHOT | IRQF_SHARED, irq_name, mcasp);
+		ret = devm_request_irq(&pdev->dev, irq, mcasp_rx_irq_handler, IRQF_NO_THREAD, irq_name, mcasp);
 
 		if (ret) {
 			dev_err(&pdev->dev, "RX IRQ request failed\n");
@@ -700,6 +718,8 @@ static int mcaspspi_probe(struct platform_device *pdev)
 	clock_rate = clk_get_rate(mcasp->clk);
 	dev_info(mcasp->dev, "Functional clock rate is %d Hz", clock_rate);
 
+	pm_runtime_get_sync(mcasp->dev);
+
 	mcasp_sw_init(mcasp);
 	mcasp_hw_init(mcasp);
 	mcasp_start(mcasp);
@@ -716,6 +736,7 @@ static int mcaspspi_remove(struct platform_device *pdev)
 	struct davinci_mcasp *mcasp = dev_get_drvdata(&pdev->dev);
 
 	mcasp_stop(mcasp);
+	pm_runtime_put(mcasp->dev);
 
 	if (mcasp->tx_buf.buf)
 		free_page((long unsigned int) mcasp->tx_buf.buf);
