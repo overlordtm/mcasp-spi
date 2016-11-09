@@ -314,7 +314,7 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 static void mcasp_rx_init(struct davinci_mcasp *mcasp) {
 
 	// mask bits
-	mcasp_set_reg(mcasp, DAVINCI_MCASP_RMASK_REG, 0xFF);
+	mcasp_set_reg(mcasp, DAVINCI_MCASP_RMASK_REG, 0xFFFF0000);
 	REG_DUMP(mcasp, DAVINCI_MCASP_RMASK_REG);
 
 	// format bits
@@ -359,7 +359,7 @@ static void mcasp_rx_init(struct davinci_mcasp *mcasp) {
 static void mcasp_tx_init(struct davinci_mcasp *mcasp) {
 
 	// mask
-	mcasp_set_reg(mcasp, DAVINCI_MCASP_XMASK_REG, 0xFF);
+	mcasp_set_reg(mcasp, DAVINCI_MCASP_XMASK_REG, 0xFFFF0000);
 	REG_DUMP(mcasp, DAVINCI_MCASP_XMASK_REG);
 
 	// format
