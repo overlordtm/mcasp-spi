@@ -29,10 +29,10 @@
 #define TDM_SLOTS	8
 
 #define CLK_DIV		23
-#define HCLK_DIV	0
+#define HCLK_DIV	23
 
 #define MCASP_DEBUG
-// #define MCASP_REG_DEBUG
+#define MCASP_REG_DEBUG
 
 #define MCASP_DEBUG_IRQTX
 #define MCASP_DEBUG_IRQRX
@@ -40,7 +40,7 @@
 #define REG_DUMP_FORCE(MCASP, REG) dev_info(MCASP->dev, #REG " is 0x%08X", mcasp_get_reg(MCASP, REG));
 
 #ifdef MCASP_REG_DEBUG
-	#define REG_DUMP(MCASP, REG) REG_DUMP_FORCE(MCASP, REG)
+	#define REG_DUMP(MCASP, REG) dev_info(MCASP->dev, #REG " is 0x%08X", mcasp_get_reg(MCASP, REG));
 #else
 	#define REG_DUMP(MCASP, REG) /* noop */
 #endif // MCASP_REG_DEBUG
@@ -95,14 +95,14 @@ static ssize_t mcasp_dev_read(struct file *filep, char __user *buf, size_t lengt
 	u32 val =  0;
 	ssize_t retval = 0;
 
-	dev_info(mcasp->dev, "Mcasp ptr in read %p", mcasp);
-	dev_info(mcasp->dev, "Read request on char dev. length:%zu offset:%lld head:%d tail:%d", length, *offset, mcasp->rx_buf.head, mcasp->rx_buf.tail);
+	// dev_info(mcasp->dev, "Mcasp ptr in read %p", mcasp);
+	// dev_info(mcasp->dev, "Read request on char dev. length:%zu offset:%lld head:%d tail:%d", length, *offset, mcasp->rx_buf.head, mcasp->rx_buf.tail);
 
 	// consumer for rx buf
 	if(CIRC_CNT(mcasp->rx_buf.head, mcasp->rx_buf.tail, MCASP_RX_BUF_SIZE) > 0) {
 		val = mcasp->rx_buf.buf[mcasp->rx_buf.tail];
 		mcasp->rx_buf.tail = (mcasp->rx_buf.tail + sizeof(u32)) & (MCASP_RX_BUF_SIZE - 1);
-		dev_info(mcasp->dev, "Device read %x", val);
+		// dev_info(mcasp->dev, "Device read %x", val);
 
 		if(copy_to_user(buf, &val, sizeof(u32))) {
 			retval = -EFAULT;
@@ -122,8 +122,8 @@ static ssize_t mcasp_dev_write(struct file *filep, const char *buf, size_t lengt
 	ssize_t retval = 1;
 	u32 val;
 
-	dev_info(mcasp->dev, "Mcasp ptr in write %p", mcasp);
-	dev_info(mcasp->dev, "Write request on char dev. length:%zu offset:%lld head:%d tail:%d", length, *offset, mcasp->tx_buf.head, mcasp->tx_buf.tail);
+	// dev_info(mcasp->dev, "Mcasp ptr in write %p", mcasp);
+	// dev_info(mcasp->dev, "Write request on char dev. length:%zu offset:%lld head:%d tail:%d", length, *offset, mcasp->tx_buf.head, mcasp->tx_buf.tail);
 
 	// producer for tx buff
 	if(CIRC_SPACE(mcasp->tx_buf.head, mcasp->tx_buf.tail, MCASP_TX_BUF_SIZE) > 0) {
@@ -134,7 +134,7 @@ static ssize_t mcasp_dev_write(struct file *filep, const char *buf, size_t lengt
 
 		mcasp->tx_buf.buf[mcasp->tx_buf.head] = val;
 		mcasp->tx_buf.head = (mcasp->tx_buf.head + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
-		dev_info(mcasp->dev, "Wrote to tx_buf val:%x head:%d tail:%d", val, mcasp->tx_buf.head, mcasp->tx_buf.tail);
+		// dev_info(mcasp->dev, "Wrote to tx_buf val:%x head:%d tail:%d", val, mcasp->tx_buf.head, mcasp->tx_buf.tail);
 		retval = length;
 	} else {
 		dev_warn(mcasp->dev, "Cannot write, buffer full head:%d, tail:%d", mcasp->tx_buf.head, mcasp->tx_buf.tail);
@@ -216,9 +216,14 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 	struct davinci_mcasp *mcasp = (struct davinci_mcasp *)data;
 	u32 handled_mask = 0;
 	u32 stat;
-	u32 val = 0xABCD1234;
+	u32 val = 0xFFFFFFFF;
+	unsigned long flags;
+
+	local_irq_save(flags);
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
+
+	// dev_info(mcasp->dev, "TX IRQ stat %08X", stat);
 
 	// printk(KERN_INFO "tx irq %08X %d %d %p", stat, mcasp->tx_buf.head, mcasp->tx_buf.tail, mcasp);
 	// consumer for tx buf
@@ -234,7 +239,7 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 
 	if (stat & XUNDRN) {
 		dev_err_ratelimited(mcasp->dev, "Transmit buffer underflow XUNDRN");
-		// dev_info(mcasp->dev, "Transmit buffer underflow XUNDRN");
+		dev_info(mcasp->dev, "Transmit buffer underflow XUNDRN");
 		// mcasp_set_reg(mcasp, DAVINCI_MCASP_XGBLCTL_REG, 0x0);
 		handled_mask |= XUNDRN;
 	}
@@ -244,12 +249,14 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 	}
 
 	if (stat & XRERR) {
+		dev_err_ratelimited(mcasp->dev, "transmit irq error");
 		handled_mask |= XRERR;
 	}
 
 	/* Ack the handled event only */
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_XSTAT_REG, handled_mask);
 
+	local_irq_restore(flags);
 	return IRQ_RETVAL(handled_mask);
 }
 
@@ -259,14 +266,19 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 	u32 handled_mask = 0;
 	u32 stat;
 	u32 val;
+	unsigned long flags;
+
+	local_irq_save(flags);
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
+
+	// dev_info(mcasp->dev, "RX IRQ stat %08X", stat);
 
 	// printk(KERN_INFO "rx irq %08X %d %d %p", stat, mcasp->rx_buf.head, mcasp->rx_buf.tail, mcasp);
 	// producer for rx buf
 	if (stat & RDATA) {
-		// printk(KERN_INFO "RDATA");
 		val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
+		// printk(KERN_INFO "RDATA %08X", val);
 		if(CIRC_SPACE(mcasp->rx_buf.head, mcasp->rx_buf.tail, MCASP_TX_BUF_SIZE) > 0) {
 			mcasp->rx_buf.buf[mcasp->rx_buf.head] = val;
 			mcasp->rx_buf.head = (mcasp->rx_buf.head + sizeof(u32)) & (MCASP_TX_BUF_SIZE - 1);
@@ -278,7 +290,7 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 
 	if (stat & ROVRN) {
 		dev_err_ratelimited(mcasp->dev, "Receive buffer overflow ROVRN");
-		// dev_info(mcasp->dev, "Receive buffer overflow ROVRN");
+		dev_info(mcasp->dev, "Receive buffer overflow ROVRN");
 		// mcasp_set_reg(mcasp, DAVINCI_MCASP_RGBLCTL_REG, 0x0);
 		handled_mask |= ROVRN;
 	}
@@ -288,12 +300,14 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 	}
 
 	if (stat & XRERR) {
+		dev_err_ratelimited(mcasp->dev, "receive irq error");
 		handled_mask |= XRERR;
 	}
 
 	/* Ack the handled event only */
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_RSTAT_REG, handled_mask);
 
+	local_irq_restore(flags);
 	return IRQ_RETVAL(handled_mask);
 }
 
