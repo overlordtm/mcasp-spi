@@ -21,9 +21,6 @@
 #define DAVINCI_MCASP_H
 
 
-#define MCASP_TX_BUF_SIZE	PAGE_SIZE
-#define MCASP_RX_BUF_SIZE	PAGE_SIZE
-
 #define MCASP_DEVICE_NAME	"mcasp"
 #define MCASP_CLASS_NAME	"mcaspclass"
 
@@ -98,15 +95,11 @@
 /* Receive Buffer for Serializer n */
 #define DAVINCI_MCASP_RBUF_REG(n)	(0x280 + (n << 2))
 
-/* McASP FIFO Registers */
-#define DAVINCI_MCASP_V2_AFIFO_BASE	(0x1010)
-#define DAVINCI_MCASP_V3_AFIFO_BASE	(0x1000)
-
 /* FIFO register offsets from AFIFO base */
-#define MCASP_WFIFOCTL_OFFSET		(0x0)
-#define MCASP_WFIFOSTS_OFFSET		(0x4)
-#define MCASP_RFIFOCTL_OFFSET		(0x8)
-#define MCASP_RFIFOSTS_OFFSET		(0xc)
+#define MCASP_WFIFOCTL_REG		0x1000
+#define MCASP_WFIFOSTS_REG		0x1004
+#define MCASP_RFIFOCTL_REG		0x1008
+#define MCASP_RFIFOSTS_REG		0x100c
 
 /*
  * DAVINCI_PWRIDLESYSCONFIGT_REG - Power Down and Emulation Management Register Bits
@@ -281,7 +274,10 @@
  * DAVINCI_MCASP_RSTAT_REG - Receiver Status Register Bits
  */
 #define XRERR		BIT(8) /* Transmit/Receive error */
+#define XRDMAERR	BIT(7)
+#define XRSTAFRM	BIT(6)
 #define XRDATA		BIT(5) /* Transmit/Receive data ready */
+#define XRLAST		BIT(4)
 
 /*
  * DAVINCI_MCASP_AMUTE_REG -  Mute Control Register Bits
@@ -336,12 +332,13 @@
  */
 #define FIFO_ENABLE	BIT(16)
 #define NUMEVT_MASK	(0xFF << 8)
-#define NUMEVT(x)	(((x) & 0xFF) << 8)
+#define NUMEVT(val)	(((val) & 0xFF) << 8)
+#define NUMDMA(val)	(val)
 #define NUMDMA_MASK	(0xFF)
 
-/* clock divider IDs */
-#define MCASP_CLKDIV_AUXCLK		0 /* HCLK divider from AUXCLK */
-#define MCASP_CLKDIV_BCLK		1 /* BCLK divider from HCLK */
-#define MCASP_CLKDIV_BCLK_FS_RATIO	2 /* to set BCLK FS ration */
+// /* clock divider IDs */
+// #define MCASP_CLKDIV_AUXCLK		0 /* HCLK divider from AUXCLK */
+// #define MCASP_CLKDIV_BCLK		1 /* BCLK divider from HCLK */
+// #define MCASP_CLKDIV_BCLK_FS_RATIO	2 /* to set BCLK FS ration */
 
 #endif	/* DAVINCI_MCASP_H */
