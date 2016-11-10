@@ -20,9 +20,14 @@
 #include <linux/circ_buf.h>
 #include <net/netlink.h>
 #include <net/genetlink.h>
+#include <linux/kthread.h>
+#include <linux/sched.h>
+#include <linux/delay.h>
 
 
 #include "mcasp.h"
+
+#define FIFO_DEPTH			64
 
 #define MCASP_BUF_SIZE		(PAGE_SIZE/4)
 #define MCASP_TX_BUF_SIZE	MCASP_BUF_SIZE
@@ -78,6 +83,8 @@ struct davinci_mcasp {
 	struct cdev cdev;
 
 	int majorNum;
+
+	struct task_struct *worker;
 
 	u32 revision;
 };
@@ -232,14 +239,28 @@ static void mcasp_set_ctl_reg(struct davinci_mcasp *mcasp, u32 ctl_reg, u32 val)
  * end of register stuff
  */
 
+static int mcasp_worker(void *data) {
+	struct davinci_mcasp *mcasp = (struct davinci_mcasp *)data;
+	u32 wfifo, rfifo;
+
+	while(!kthread_should_stop()) {
+		wfifo = mcasp_get_reg(mcasp, MCASP_WFIFOSTS_REG);
+		rfifo = mcasp_get_reg(mcasp, MCASP_RFIFOSTS_REG);
+		dev_info(mcasp->dev, "WFIFO: 0x%08X, RFIFO: 0x%08X", wfifo, rfifo);
+		msleep(100);
+	}
+
+	return 0;
+}
+
 static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 {
 	struct davinci_mcasp *mcasp = (struct davinci_mcasp *)data;
 	u32 handled_mask = 0;
 	u32 stat;
-	unsigned long flags;
+	// unsigned long flags;
 
-	local_irq_save(flags);
+	// local_irq_save(flags);
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
 
@@ -286,7 +307,7 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 	/* Ack the handled event only */
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_XSTAT_REG, handled_mask);
 
-	local_irq_restore(flags);
+	// local_irq_restore(flags);
 	return IRQ_RETVAL(handled_mask);
 }
 
@@ -296,9 +317,9 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 	u32 handled_mask = 0;
 	u32 stat;
 	u32 val1,val2,val3,val4,val5,val6;
-	unsigned long flags;
+	// unsigned long flags;
 
-	local_irq_save(flags);
+	// local_irq_save(flags);
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
 
@@ -324,7 +345,7 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 		val4 = mcasp_get_dat_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
 		val5 = mcasp_get_dat_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
 		val6 = mcasp_get_dat_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
-		printk(KERN_INFO "RLAST %08X %08X %08X %08X %08X %08X", val1, val2, val3, val4, val5, val6);
+		// printk(KERN_INFO "RLAST %08X %08X %08X %08X %08X %08X", val1, val2, val3, val4, val5, val6);
 		handled_mask |= XRLAST;
 	}
 
@@ -347,7 +368,7 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 	/* Ack the handled event only */
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_RSTAT_REG, handled_mask);
 
-	local_irq_restore(flags);
+	// local_irq_restore(flags);
 	return IRQ_RETVAL(handled_mask);
 }
 
@@ -463,7 +484,6 @@ static void mcasp_tx_init(struct davinci_mcasp *mcasp) {
 }
 
 static int mcasp_hw_init(struct davinci_mcasp *mcasp) {
-	// pm_runtime_get_sync(mcasp->dev);
 
 	mcasp->revision = mcasp_get_reg(mcasp, DAVINCI_MCASP_REV_REG);
 	REG_DUMP(mcasp, DAVINCI_MCASP_REV_REG);
@@ -529,8 +549,6 @@ static int mcasp_hw_init(struct davinci_mcasp *mcasp) {
 	REG_DUMP(mcasp, DAVINCI_MCASP_GBLCTL_REG);
 	REG_DUMP(mcasp, DAVINCI_MCASP_RSTAT_REG);
 	REG_DUMP(mcasp, DAVINCI_MCASP_XSTAT_REG);
-
-	// pm_runtime_put(mcasp->dev);
 
 	return 0;
 }
@@ -602,8 +620,6 @@ static int mcasp_start_tx(struct davinci_mcasp *mcasp) {
 
 	mcasp->tx_buf.head = mcasp->tx_buf.tail = 0;
 
-	// pm_runtime_get_sync(mcasp->dev);
-
 	dev_info(mcasp->dev, "Starting high freq TX clock");
 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, XHCLKRST);
 
@@ -619,14 +635,11 @@ static int mcasp_start_tx(struct davinci_mcasp *mcasp) {
 
 	REG_DUMP(mcasp, MCASP_WFIFOSTS_REG);
 
-	dev_info(mcasp->dev, "Filling fifo");
 	mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x11111111);
 	mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x22222222);
 	mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x33333333);
 	mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x44444444);
 	mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x55555555);
-	// mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x66666666);
-	dev_info(mcasp->dev, "Fifo filled");
 	REG_DUMP(mcasp, MCASP_WFIFOSTS_REG);
 
 	dev_info(mcasp->dev, "Enabling XDATA interrupt");
@@ -644,8 +657,6 @@ static int mcasp_start_tx(struct davinci_mcasp *mcasp) {
 static int mcasp_start_rx(struct davinci_mcasp *mcasp) {
 
 	mcasp->rx_buf.head = mcasp->rx_buf.tail = 0;
-
-	// pm_runtime_get_sync(mcasp->dev);
 
 	dev_info(mcasp->dev, "Starting high freq RX clock");
 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, RHCLKRST);
@@ -667,13 +678,15 @@ static int mcasp_start_rx(struct davinci_mcasp *mcasp) {
 
 	REG_DUMP_FORCE(mcasp, DAVINCI_MCASP_RSTAT_REG);
 
-	// pm_runtime_put(mcasp->dev);
 	return 0;
 }
 
 static int mcasp_start(struct davinci_mcasp *mcasp) {
 
 	dev_info(mcasp->dev, "Starting McASP");
+
+	mcasp->worker = kthread_run(&mcasp_worker, mcasp, "mcasp_worker");
+
 	mcasp_start_rx(mcasp);
 	mcasp_start_tx(mcasp);
 
@@ -681,7 +694,6 @@ static int mcasp_start(struct davinci_mcasp *mcasp) {
 }
 
 static int mcasp_stop_tx(struct davinci_mcasp *mcasp) {
-	// pm_runtime_get_sync(mcasp->dev);
 
 	dev_info(mcasp->dev, "Stopping McASP TX unit");
 	REG_DUMP_FORCE(mcasp, DAVINCI_MCASP_XSTAT_REG);
@@ -690,14 +702,10 @@ static int mcasp_stop_tx(struct davinci_mcasp *mcasp) {
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_XSTAT_REG, 0xFFFF);
 	REG_DUMP_FORCE(mcasp, DAVINCI_MCASP_XSTAT_REG);
 
-	// pm_runtime_put(mcasp->dev);
-
 	return 0;
 }
 
 static int mcasp_stop_rx(struct davinci_mcasp *mcasp) {
-	// pm_runtime_get_sync(mcasp->dev);
-
 	dev_info(mcasp->dev, "Stopping McASP RX unit");
 	REG_DUMP_FORCE(mcasp, DAVINCI_MCASP_RSTAT_REG);
 
@@ -705,16 +713,16 @@ static int mcasp_stop_rx(struct davinci_mcasp *mcasp) {
 	mcasp_set_reg(mcasp, DAVINCI_MCASP_RSTAT_REG, 0xFFFF);
 	REG_DUMP_FORCE(mcasp, DAVINCI_MCASP_RSTAT_REG);
 
-	// pm_runtime_put(mcasp->dev);
-
 	return 0;
 }
 
 static int mcasp_stop(struct davinci_mcasp *mcasp) {
 
 	dev_info(mcasp->dev, "Stopping McASP");
+	kthread_stop(mcasp->worker);
 	mcasp_stop_tx(mcasp);
 	mcasp_stop_rx(mcasp);
+
 
 	return 0;
 }
@@ -843,20 +851,6 @@ static int mcaspspi_remove(struct platform_device *pdev)
 	pm_runtime_disable(&pdev->dev);
 	return 0;
 }
-
-// static struct attribute *dev_attrs[] = {
-// 	&dev_attr_revision.attr,
-// 	NULL,
-// };
-
-// static struct attribute_group dev_attr_group = {
-// 	.attrs = dev_attrs
-// };
-
-// static const struct attribute_group *dev_attr_groups[] = {
-// 	&dev_attr_group,
-// 	NULL,
-// };
 
 static struct platform_driver mcasp_driver = {
 	.probe          = mcaspspi_probe,
