@@ -38,9 +38,9 @@ mknod:
 	$(shell $(shell dmesg | egrep -o "mknod.*" | tail -1))
 
 fixnet:
-	sudo rmmod rndis_wlan
-	sudo rmmod rndis_host
-	sudo rmmod cdc_ether
-	sudo rmmod cdc_acm
-	sudo rmmod usbnet
-	sudo rmmod mii
+	sudo rmmod rndis_wlan || true
+	sudo rmmod rndis_host || true
+	sudo rmmod cdc_ether || true
+	sudo rmmod cdc_acm || true
+	sudo rmmod usbnet || true
+	sudo rmmod mii || true
