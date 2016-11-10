@@ -23,6 +23,7 @@
 #include <linux/kthread.h>
 #include <linux/sched.h>
 #include <linux/delay.h>
+#include <linux/jiffies.h>
 
 
 #include "mcasp.h"
@@ -40,8 +41,8 @@
 
 #define MASK			0xFFFF0000
 
-#define CLK_DIV		31
-#define HCLK_DIV	31
+#define CLK_DIV		23
+#define HCLK_DIV	9
 
 #define MCASP_DEBUG
 #define MCASP_REG_DEBUG
@@ -118,8 +119,6 @@ static ssize_t mcasp_dev_read(struct file *filep, char __user *buf, size_t lengt
 	if(CIRC_CNT(mcasp->rx_buf.head, mcasp->rx_buf.tail, MCASP_RX_BUF_SIZE) > 0) {
 		val = mcasp->rx_buf.buf[mcasp->rx_buf.tail];
 		mcasp->rx_buf.tail = (mcasp->rx_buf.tail + 1) & (MCASP_RX_BUF_SIZE - 1);
-		dev_info(mcasp->dev, "Device read 0x%08X", val);
-
 		if(copy_to_user(buf, &val, sizeof(u32))) {
 			retval = -EFAULT;
 		}
@@ -242,12 +241,45 @@ static void mcasp_set_ctl_reg(struct davinci_mcasp *mcasp, u32 ctl_reg, u32 val)
 static int mcasp_worker(void *data) {
 	struct davinci_mcasp *mcasp = (struct davinci_mcasp *)data;
 	u32 wfifo, rfifo;
+	// u32 val, val1,val2,val3,val4,val5,val6;
+	u32 val;
+	int i;
+	u64 start, stop, delta;
+
 
 	while(!kthread_should_stop()) {
+		start = get_jiffies_64();
 		wfifo = mcasp_get_reg(mcasp, MCASP_WFIFOSTS_REG);
 		rfifo = mcasp_get_reg(mcasp, MCASP_RFIFOSTS_REG);
-		dev_info(mcasp->dev, "WFIFO: 0x%08X, RFIFO: 0x%08X", wfifo, rfifo);
-		msleep(100);
+		// dev_info(mcasp->dev, "WFIFO: 0x%08X, RFIFO: 0x%08X", wfifo, rfifo);
+
+
+		if(wfifo < (FIFO_DEPTH - 5)) {
+			for(i = 0; i < 6; i++) {
+				if(unlikely(CIRC_CNT(mcasp->tx_buf.head, mcasp->tx_buf.tail, MCASP_TX_BUF_SIZE) > 0)) {
+					val = mcasp->tx_buf.buf[mcasp->tx_buf.tail];
+					mcasp->tx_buf.tail = (mcasp->tx_buf.tail + 1) & (MCASP_TX_BUF_SIZE - 1);
+				} else {
+					val = 0xABCD0000;
+				}
+				mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), val);
+			}
+		}
+
+		if(rfifo > 5) {
+			for(i = 0; i < 6; i++) {
+				val = mcasp_get_dat_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
+				if(likely(CIRC_SPACE(mcasp->rx_buf.head, mcasp->rx_buf.tail, MCASP_RX_BUF_SIZE) > 6)) {
+					mcasp->rx_buf.buf[mcasp->rx_buf.head] = val;
+					mcasp->rx_buf.head = (mcasp->rx_buf.head + 1) & (MCASP_RX_BUF_SIZE - 1);
+				}
+			}
+		}
+
+		schedule();
+		stop = get_jiffies_64();
+		delta = stop - start;
+		// dev_info(mcasp->dev, "Took %llu jiffies", delta);
 	}
 
 	return 0;
@@ -258,47 +290,30 @@ static irqreturn_t mcasp_tx_irq_handler(int irq, void *data)
 	struct davinci_mcasp *mcasp = (struct davinci_mcasp *)data;
 	u32 handled_mask = 0;
 	u32 stat;
-	// unsigned long flags;
-
-	// local_irq_save(flags);
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG);
 
-	// consumer for tx buf
-	// if (stat & XRDATA) {
-		// if(CIRC_CNT(mcasp->tx_buf.head, mcasp->tx_buf.tail, MCASP_TX_BUF_SIZE) > 0) {
-		// 	val = mcasp->tx_buf.buf[mcasp->tx_buf.tail];
-		// 	mcasp->tx_buf.tail = (mcasp->tx_buf.tail + 1) & (MCASP_TX_BUF_SIZE - 1);
-		// } else {
-		// 	dev_err_ratelimited(mcasp->dev, "tx_buf underrun");
-		// }
-		// mcasp_set_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0xCCEEEECC);
-		// handled_mask |= XDATA;
-	// }
-
-	if (stat & XRSTAFRM) {
-		// REG_DUMP(mcasp, MCASP_WFIFOSTS_REG);
-		mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x11111111);
-		mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x22222222);
-		mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x33333333);
-		mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x44444444);
-		mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x55555555);
-		mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x66666666);
-		handled_mask |= XRSTAFRM;
-		// REG_DUMP(mcasp, MCASP_WFIFOSTS_REG);
-	}
-
-	if (stat & XRDMAERR) {
+	if (unlikely(stat & XRDMAERR)) {
 		dev_err_ratelimited(mcasp->dev, "XDMAERR");
 		handled_mask |= XRDMAERR;
 	}
 
-	if (stat & XUNDRN) {
+	if (unlikely(stat & XUNDRN)) {
 		dev_err_ratelimited(mcasp->dev, "XUNDRN");
 		handled_mask |= XUNDRN;
 	}
 
-	if (stat & XRERR) {
+	if (unlikely(stat & XRCKFAIL)) {
+		dev_err_ratelimited(mcasp->dev, "XCKFAIL");
+		handled_mask |= XRCKFAIL;
+	}
+
+	if (unlikely(stat & XRSYNCERR)) {
+		dev_err_ratelimited(mcasp->dev, "XSYNCERR");
+		handled_mask |= XRSYNCERR;
+	}
+
+	if (unlikely(stat & XRERR)) {
 		dev_err_ratelimited(mcasp->dev, "XERR 0x%08X", stat);
 		mcasp_set_reg(mcasp, DAVINCI_MCASP_XGBLCTL_REG, 0);
 		handled_mask |= XRERR;
@@ -316,50 +331,30 @@ static irqreturn_t mcasp_rx_irq_handler(int irq, void *data)
 	struct davinci_mcasp *mcasp = (struct davinci_mcasp *)data;
 	u32 handled_mask = 0;
 	u32 stat;
-	u32 val1,val2,val3,val4,val5,val6;
-	// unsigned long flags;
-
-	// local_irq_save(flags);
 
 	stat = mcasp_get_reg(mcasp, DAVINCI_MCASP_RSTAT_REG);
 
-	// dev_info(mcasp->dev, "RX IRQ stat %08X", stat);
-
-	// producer for rx buf
-	// if (stat & RDATA) {
-	// 	val = mcasp_get_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
-	// 	printk(KERN_INFO "RDATA %08X", val);
-	// 	// if(CIRC_SPACE(mcasp->rx_buf.head, mcasp->rx_buf.tail, MCASP_TX_BUF_SIZE) > 0) {
-	// 	// 	mcasp->rx_buf.buf[mcasp->rx_buf.head] = val;
-	// 	// 	mcasp->rx_buf.head = (mcasp->rx_buf.head + 1) & (MCASP_TX_BUF_SIZE - 1);
-	// 	// } else {
-	// 	// 	dev_alert_ratelimited(mcasp->dev, "rx_buf overflow");
-	// 	// }
-	// 	handled_mask |= RDATA;
-	// }
-
-	if (stat & XRLAST) {
-		val1 = mcasp_get_dat_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
-		val2 = mcasp_get_dat_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
-		val3 = mcasp_get_dat_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
-		val4 = mcasp_get_dat_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
-		val5 = mcasp_get_dat_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
-		val6 = mcasp_get_dat_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
-		// printk(KERN_INFO "RLAST %08X %08X %08X %08X %08X %08X", val1, val2, val3, val4, val5, val6);
-		handled_mask |= XRLAST;
-	}
-
-	if (stat & ROVRN) {
+	if (unlikely(stat & ROVRN)) {
 		dev_err_ratelimited(mcasp->dev, "ROVRN");
 		handled_mask |= ROVRN;
 	}
 
-	if (stat & XRDMAERR) {
+	if (unlikely(stat & XRDMAERR)) {
 		dev_err_ratelimited(mcasp->dev, "RDMAERR");
 		handled_mask |= XRDMAERR;
 	}
 
-	if (stat & XRERR) {
+	if (unlikely(stat & XRCKFAIL)) {
+		dev_err_ratelimited(mcasp->dev, "RCKFAIL");
+		handled_mask |= XRCKFAIL;
+	}
+
+	if (unlikely(stat & XRSYNCERR)) {
+		dev_err_ratelimited(mcasp->dev, "RSYNCERR");
+		handled_mask |= XRSYNCERR;
+	}
+
+	if (unlikely(stat & XRERR)) {
 		dev_err_ratelimited(mcasp->dev, "RERR 0x%08X", stat);
 		mcasp_set_reg(mcasp, DAVINCI_MCASP_RGBLCTL_REG, 0);
 		handled_mask |= XRERR;
@@ -404,7 +399,7 @@ static void mcasp_rx_init(struct davinci_mcasp *mcasp) {
 	REG_DUMP(mcasp, DAVINCI_MCASP_AHCLKRCTL_REG);
 
 	// ROVRN interrupt eanble
-	mcasp_set_bits(mcasp, DAVINCI_MCASP_RINTCTL_REG, ROVRN);
+	mcasp_set_bits(mcasp, DAVINCI_MCASP_RINTCTL_REG, ROVRN | RSYNCERR | RCKFAIL | RDMAERR);
 	REG_DUMP(mcasp, DAVINCI_MCASP_RINTCTL_REG);
 
 	// clock check
@@ -461,7 +456,7 @@ static void mcasp_tx_init(struct davinci_mcasp *mcasp) {
 	REG_DUMP(mcasp, DAVINCI_MCASP_AHCLKXCTL_REG);
 
 	// XUNDRN interrupt eanble
-	mcasp_set_bits(mcasp, DAVINCI_MCASP_XINTCTL_REG, XUNDRN);
+	mcasp_set_bits(mcasp, DAVINCI_MCASP_XINTCTL_REG, XUNDRN | XSYNCERR | XCKFAIL | XDMAERR);
 	REG_DUMP(mcasp,DAVINCI_MCASP_XINTCTL_REG);
 
 	// set clock check
@@ -633,17 +628,17 @@ static int mcasp_start_tx(struct davinci_mcasp *mcasp) {
 	while ((mcasp_get_reg(mcasp, DAVINCI_MCASP_XSTAT_REG) & XRDATA) && (cnt < 100000))
 		cnt++;
 
-	REG_DUMP(mcasp, MCASP_WFIFOSTS_REG);
-
-	mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x11111111);
-	mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x22222222);
-	mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x33333333);
-	mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x44444444);
-	mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x55555555);
-	REG_DUMP(mcasp, MCASP_WFIFOSTS_REG);
+	// REG_DUMP(mcasp, MCASP_WFIFOSTS_REG);
+	// mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x11111111);
+	// mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x22222222);
+	// mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x33333333);
+	// mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x44444444);
+	// mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x55555555);
+	// mcasp_set_dat_reg(mcasp, DAVINCI_MCASP_XBUF_REG(AXRNTX), 0x66666666);
+	// REG_DUMP(mcasp, MCASP_WFIFOSTS_REG);
 
 	dev_info(mcasp->dev, "Enabling XDATA interrupt");
-	mcasp_set_bits(mcasp, DAVINCI_MCASP_XINTCTL_REG, XSTAFRM);
+	// mcasp_set_bits(mcasp, DAVINCI_MCASP_XINTCTL_REG, XSTAFRM);
 
 	dev_info(mcasp->dev, "Resetting TX state machine");
 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, XSMRST);
@@ -674,7 +669,7 @@ static int mcasp_start_rx(struct davinci_mcasp *mcasp) {
 	mcasp_set_ctl_reg(mcasp, DAVINCI_MCASP_GBLCTL_REG, RFSRST);
 
 	dev_info(mcasp->dev, "Enabling RDATA interrupt");
-	mcasp_set_bits(mcasp, DAVINCI_MCASP_RINTCTL_REG, RLAST);
+	// mcasp_set_bits(mcasp, DAVINCI_MCASP_RINTCTL_REG, RLAST);
 
 	REG_DUMP_FORCE(mcasp, DAVINCI_MCASP_RSTAT_REG);
 
@@ -687,6 +682,7 @@ static int mcasp_start(struct davinci_mcasp *mcasp) {
 
 	mcasp->worker = kthread_run(&mcasp_worker, mcasp, "mcasp_worker");
 
+	msleep(10);
 	mcasp_start_rx(mcasp);
 	mcasp_start_tx(mcasp);
 

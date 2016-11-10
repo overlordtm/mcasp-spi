@@ -278,6 +278,9 @@
 #define XRSTAFRM	BIT(6)
 #define XRDATA		BIT(5) /* Transmit/Receive data ready */
 #define XRLAST		BIT(4)
+#define XRTDMSLOT	BIT(3)
+#define XRCKFAIL	BIT(2)
+#define XRSYNCERR	BIT(1)
 
 /*
  * DAVINCI_MCASP_AMUTE_REG -  Mute Control Register Bits
