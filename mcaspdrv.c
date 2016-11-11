@@ -45,7 +45,7 @@
 #define HCLK_DIV	9
 
 #define MCASP_DEBUG
-#define MCASP_REG_DEBUG
+// #define MCASP_REG_DEBUG
 
 #define MCASP_DEBUG_IRQTX
 #define MCASP_DEBUG_IRQRX
@@ -244,11 +244,8 @@ static int mcasp_worker(void *data) {
 	// u32 val, val1,val2,val3,val4,val5,val6;
 	u32 val;
 	int i;
-	u64 start, stop, delta;
-
 
 	while(!kthread_should_stop()) {
-		start = get_jiffies_64();
 		wfifo = mcasp_get_reg(mcasp, MCASP_WFIFOSTS_REG);
 		rfifo = mcasp_get_reg(mcasp, MCASP_RFIFOSTS_REG);
 		// dev_info(mcasp->dev, "WFIFO: 0x%08X, RFIFO: 0x%08X", wfifo, rfifo);
@@ -258,6 +255,7 @@ static int mcasp_worker(void *data) {
 			for(i = 0; i < 6; i++) {
 				if(unlikely(CIRC_CNT(mcasp->tx_buf.head, mcasp->tx_buf.tail, MCASP_TX_BUF_SIZE) > 0)) {
 					val = mcasp->tx_buf.buf[mcasp->tx_buf.tail];
+					printk(KERN_INFO "wrote 0x%08X", val);
 					mcasp->tx_buf.tail = (mcasp->tx_buf.tail + 1) & (MCASP_TX_BUF_SIZE - 1);
 				} else {
 					val = 0xABCD0000;
@@ -269,7 +267,8 @@ static int mcasp_worker(void *data) {
 		if(rfifo > 5) {
 			for(i = 0; i < 6; i++) {
 				val = mcasp_get_dat_reg(mcasp, DAVINCI_MCASP_RBUF_REG(AXRNRX));
-				if(likely(CIRC_SPACE(mcasp->rx_buf.head, mcasp->rx_buf.tail, MCASP_RX_BUF_SIZE) > 6)) {
+				// printk(KERN_INFO "read 0x%08X", val);
+				if(unlikely(CIRC_SPACE(mcasp->rx_buf.head, mcasp->rx_buf.tail, MCASP_RX_BUF_SIZE) > 6 && val != 0xABCD000)) {
 					mcasp->rx_buf.buf[mcasp->rx_buf.head] = val;
 					mcasp->rx_buf.head = (mcasp->rx_buf.head + 1) & (MCASP_RX_BUF_SIZE - 1);
 				}
@@ -277,9 +276,6 @@ static int mcasp_worker(void *data) {
 		}
 
 		schedule();
-		stop = get_jiffies_64();
-		delta = stop - start;
-		// dev_info(mcasp->dev, "Took %llu jiffies", delta);
 	}
 
 	return 0;
@@ -681,7 +677,6 @@ static int mcasp_start(struct davinci_mcasp *mcasp) {
 	dev_info(mcasp->dev, "Starting McASP");
 
 	mcasp->worker = kthread_run(&mcasp_worker, mcasp, "mcasp_worker");
-
 	msleep(10);
 	mcasp_start_rx(mcasp);
 	mcasp_start_tx(mcasp);
